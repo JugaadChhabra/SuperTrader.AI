@@ -1,3 +1,4 @@
 socketio
 requests
 dotenv
+spacy
