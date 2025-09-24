@@ -8,6 +8,8 @@ from typing import Any, AsyncIterator, Dict, Iterable, List, Optional
 
 import requests
 import socketio
+import pandas as pd
+import numpy as np
 from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
@@ -232,8 +234,103 @@ def demo_run_from_env(duration_sec: int = 15) -> None:
 if __name__ == "__main__": 
     demo_run_from_env(10)
 
-def fetch_ohlcv(symbols, interval, start, end): # — pull raw bars (1m/5m/15m/daily).
-    pass
+def fetch_ohlcv(symbols: List[str], interval: str, start: str, end: str, 
+                api_keys: Dict[str, str]) -> Dict[str, pd.DataFrame]:
+    """Fetch OHLCV (Open, High, Low, Close, Volume) data for symbols.
+    
+    Args:
+        symbols: List of symbols (e.g., ['NSE:RELIANCE', 'NSE:SBIN'])
+        interval: Time interval ('1minute', '5minute', '15minute', '1day')
+        start: Start date in 'YYYY-MM-DD' format
+        end: End date in 'YYYY-MM-DD' format  
+        api_keys: Dict with 'app_key' and 'api_session_token'
+        
+    Returns:
+        Dict mapping symbol -> DataFrame with OHLCV data
+        
+    Note:
+        This is a template implementation. You may need to adjust the API endpoint
+        and parameters based on ICICI Direct's actual historical data API.
+    """
+    if not api_keys.get("app_key") or not api_keys.get("api_session_token"):
+        raise ValueError("Missing required API keys")
+        
+    results = {}
+    
+    # ICICI API endpoint for historical data (this may need adjustment)
+    base_url = "https://api.icicidirect.com/breezeapi/api/v1/historicaldata"
+    
+    headers = {
+        "Content-Type": "application/json",
+        "X-AppKey": api_keys["app_key"],
+        "X-SessionToken": api_keys["api_session_token"]
+    }
+    
+    for symbol in symbols:
+        try:
+            # API payload (adjust based on actual ICICI API format)
+            payload = {
+                "stock_code": symbol,
+                "exchange_code": symbol.split(':')[0] if ':' in symbol else 'NSE',
+                "product_type": "C",  # Cash segment
+                "interval": interval,
+                "from_date": start,
+                "to_date": end
+            }
+            
+            logger.info("Fetching OHLCV for %s from %s to %s", symbol, start, end)
+            
+            response = requests.post(base_url, headers=headers, json=payload, timeout=30)
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            # Parse response (adjust based on actual API response format)
+            if data.get("Status") == "Success" and "Success" in data:
+                ohlcv_data = data["Success"]
+                
+                # Convert to DataFrame (adjust column mapping as needed)
+                df = pd.DataFrame(ohlcv_data)
+                
+                # Standardize column names
+                column_mapping = {
+                    'datetime': 'timestamp',
+                    'open': 'open', 
+                    'high': 'high',
+                    'low': 'low',
+                    'close': 'close',
+                    'volume': 'volume'
+                }
+                
+                df = df.rename(columns=column_mapping)
+                
+                # Ensure timestamp is datetime
+                if 'timestamp' in df.columns:
+                    df['timestamp'] = pd.to_datetime(df['timestamp'])
+                    df.set_index('timestamp', inplace=True)
+                
+                # Convert price columns to numeric
+                price_cols = ['open', 'high', 'low', 'close', 'volume']
+                for col in price_cols:
+                    if col in df.columns:
+                        df[col] = pd.to_numeric(df[col], errors='coerce')
+                
+                results[symbol] = df
+                logger.info("Fetched %d bars for %s", len(df), symbol)
+                
+            else:
+                logger.error("API error for %s: %s", symbol, data)
+                results[symbol] = pd.DataFrame()  # Empty DataFrame on error
+                
+        except requests.RequestException as e:
+            logger.error("Network error fetching %s: %s", symbol, e)
+            results[symbol] = pd.DataFrame()
+            
+        except Exception as e:
+            logger.error("Unexpected error fetching %s: %s", symbol, e)
+            results[symbol] = pd.DataFrame()
+    
+    return results
 
 def fetch_market_depth(symbol): # — level-1/level-2 snapshot (bid/ask, spreads).
     pass
@@ -250,8 +347,112 @@ def interpolate_missing(df, method): # — forward/back fill, stitching.
 def resample_bars(df, interval): # — unify to target timeframe.
     pass
 
-def compute_indicators(df): # — MACD, multi-TF SMA, RSI, volume/vol regime features.
-    pass
+def calculate_sma(prices: pd.Series, period: int) -> pd.Series:
+    """Calculate Simple Moving Average.
+    
+    Args:
+        prices: Series of closing prices
+        period: Number of periods for moving average
+        
+    Returns:
+        Series with SMA values
+    """
+    return prices.rolling(window=period, min_periods=period).mean()
+
+def calculate_rsi(prices: pd.Series, period: int = 14) -> pd.Series:
+    """Calculate Relative Strength Index.
+    
+    Args:
+        prices: Series of closing prices  
+        period: RSI period (default 14)
+        
+    Returns:
+        Series with RSI values (0-100)
+    """
+    delta = prices.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+    
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
+
+def calculate_macd(prices: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> Dict[str, pd.Series]:
+    """Calculate MACD (Moving Average Convergence Divergence).
+    
+    Args:
+        prices: Series of closing prices
+        fast: Fast EMA period (default 12)
+        slow: Slow EMA period (default 26) 
+        signal: Signal line EMA period (default 9)
+        
+    Returns:
+        Dict containing 'macd', 'signal', and 'histogram' Series
+    """
+    ema_fast = prices.ewm(span=fast).mean()
+    ema_slow = prices.ewm(span=slow).mean()
+    
+    macd_line = ema_fast - ema_slow
+    signal_line = macd_line.ewm(span=signal).mean()
+    histogram = macd_line - signal_line
+    
+    return {
+        'macd': macd_line,
+        'signal': signal_line, 
+        'histogram': histogram
+    }
+
+def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
+    """Compute technical indicators for price data.
+    
+    Args:
+        df: DataFrame with OHLCV data (expects 'close' column)
+        
+    Returns:
+        DataFrame with original data plus indicator columns
+    """
+    if df.empty or 'close' not in df.columns:
+        logger.warning("Invalid DataFrame for indicators - missing 'close' column")
+        return df
+    
+    result_df = df.copy()
+    
+    try:
+        # Simple Moving Averages (multiple timeframes)
+        result_df['sma_5'] = calculate_sma(df['close'], 5)
+        result_df['sma_10'] = calculate_sma(df['close'], 10)  
+        result_df['sma_20'] = calculate_sma(df['close'], 20)
+        result_df['sma_50'] = calculate_sma(df['close'], 50)
+        result_df['sma_200'] = calculate_sma(df['close'], 200)
+        
+        # RSI
+        result_df['rsi'] = calculate_rsi(df['close'], 14)
+        
+        # MACD
+        macd_data = calculate_macd(df['close'])
+        result_df['macd'] = macd_data['macd']
+        result_df['macd_signal'] = macd_data['signal']
+        result_df['macd_histogram'] = macd_data['histogram']
+        
+        # Volume indicators (if volume column exists)
+        if 'volume' in df.columns:
+            result_df['volume_sma_20'] = calculate_sma(df['volume'], 20)
+            # Volume ratio (current vs average)
+            result_df['volume_ratio'] = df['volume'] / result_df['volume_sma_20']
+            
+        # Volatility regime features
+        if len(df) >= 20:
+            # Rolling standard deviation of returns
+            returns = df['close'].pct_change()
+            result_df['volatility_20'] = returns.rolling(20).std() * np.sqrt(252)  # Annualized
+            result_df['vol_regime'] = result_df['volatility_20'] > result_df['volatility_20'].rolling(50).mean()
+            
+        logger.info("Computed indicators for %d rows", len(result_df))
+        
+    except Exception as exc:
+        logger.exception("Error computing indicators: %s", exc)
+        
+    return result_df
 
 def build_feature_frame(df_prices, df_indicators): # — final model feature set.
     pass
