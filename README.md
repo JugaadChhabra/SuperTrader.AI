@@ -1,7 +1,3 @@
-Awesome—here’s a super-focused, 5-day MVP roadmap in **README tick-box format**, tailored to your strengths and the goal of being able to **start (paper) trading by Day 5**. Each day lists concrete deliverables, tests, and “Definition of Done” so nobody’s blocked.
-
----
-
 # 🚀 SuperTrader.AI — 5-Day MVP Roadmap
 
 > Goal by **Day 5 (EOD)**: runnable system with **event-driven backtest + live paper-trading** loop:
