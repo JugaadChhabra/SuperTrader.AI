@@ -2,3 +2,6 @@ socketio
 requests
 dotenv
 spacy
+numpy
+pandas
+langgraph
