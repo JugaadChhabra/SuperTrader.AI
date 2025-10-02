@@ -1,464 +1,808 @@
-from typing import Dict, Any, List, Optional
-from dataclasses import dataclass
-from datetime import datetime
-import logging 
-from langgraph.graph import StateGraph, Graph
-from langgraph.prebuilt import ToolNode
-import asyncio
-import numpy as np
-import pandas as pd
+from langgraph.graph import StateGraph, END
+from typing import TypedDict, List, Dict, Any, Optional
+from datetime import datetime, time as dt_time
+import logging
+import traceback
 
-from agents.data_agent import DataAgent
-from agents.news_agent import NewsAgent
-from agents.rl_strategy_agent import RLStrategyAgent
-from agents.execution_agent import ExecutionAgent
-from utils.config import load_config
-from utils.logging import setup_logger
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s | %(levelname)s | %(name)s | %(message)s'
+)
+logger = logging.getLogger(__name__)
 
-logger = setup_logger(__name__)
 
-@dataclass
-class TradingState:
-    "global state for all agents in the workflow"
-
-    symbols: List[str]
+# ==================== STATE SCHEMA ====================
+class TradingState(TypedDict):
+    """Shared state - this is passed through ALL nodes"""
+    
+    # Time Management (CRITICAL)
     timestamp: datetime
-    market_data: Dict[str, pd.DataFrame]  
+    current_time: str
+    minutes_to_close: float
+    session_phase: str  # 'opening_range' | 'morning' | 'afternoon' | 'closing'
+    trading_allowed: bool
+    
+    # Market Data (raw from broker)
+    price_data: Dict[str, Any]  # {index: {futures: df, spot: value, vix: value}}
+    
+    # Computed Features
+    indicators: Dict[str, Any]
+    oi_data: Dict[str, Any]
+    basis_data: Dict[str, Any]
+    options_data: Dict[str, Any]
+    
+    # Sentiment
+    sentiment_scores: Dict[str, float]
+    
+    # RL Output
+    rl_action: Dict[str, Any]
+    
+    # Execution
+    orders: List[Dict[str, Any]]
+    positions: Dict[str, Any]  # Current open positions from broker
+    
+    # Risk
+    risk_status: Dict[str, Any]
+    time_guard_status: Dict[str, Any]
+    
+    # Metrics
+    metrics: Dict[str, Any]
+    
+    # Broker Context
+    broker_ctx: Dict[str, Any]  # API keys, session tokens
+    
+    # Logging
+    errors: List[str]
+    logs: List[str]
 
-    technical_features: Dict[str, np.ndarray]
-    sentiment_features: Dict[str, np.ndarray]
 
-    rl_state: Optional[np.ndarray] 
-    raw_actions: Dict[str, float]
-    position_sizes: Dict[str, float]
+# ==================== UTILITY FUNCTIONS ====================
 
-    portfolio_exposure: float
-    current_positions: Dict[str, float]
-    risk_metrics: Dict[str, Any]
+def calculate_time_metrics(current_dt: datetime) -> Dict[str, Any]:
+    """Calculate time-based metrics for intraday trading"""
+    market_open = current_dt.replace(hour=9, minute=15, second=0, microsecond=0)
+    market_close = current_dt.replace(hour=15, minute=15, second=0, microsecond=0)
+    
+    minutes_since_open = max(0, (current_dt - market_open).total_seconds() / 60)
+    minutes_to_close = max(0, (market_close - current_dt).total_seconds() / 60)
+    
+    # Session phase
+    if minutes_since_open < 30:
+        session_phase = 'opening_range'
+    elif minutes_since_open < 150:
+        session_phase = 'morning'
+    elif minutes_since_open < 300:
+        session_phase = 'afternoon'
+    else:
+        session_phase = 'closing'
+    
+    # Trading allowed? (before 3:00 PM)
+    trading_allowed = minutes_to_close >= 15
+    
+    return {
+        'minutes_since_open': minutes_since_open,
+        'minutes_to_close': minutes_to_close,
+        'session_phase': session_phase,
+        'trading_allowed': trading_allowed,
+        'minutes_since_open_norm': min(1.0, minutes_since_open / 360),
+        'minutes_to_close_norm': max(0.0, minutes_to_close / 360)
+    }
 
-    pending_orders: List[Dict[str, Any]]
-    executed_trades: List[Dict[str, Any]]
 
-    data_ready: bool = False
-    news_ready: bool = False
-    rl_ready: bool = False
-    execution_ready: bool = False
-    risk_approved: bool = False
+# ==================== NODE 1: DATA AGENT ====================
 
-    errors: List[str] = None
-
-
-class TradingWorkflow:
+def data_agent_node(state: TradingState) -> TradingState:
     """
-    Main workflow orchestator for managing the sequential execution of agents.
+    Fetch real market data from ICICI Direct broker
+    Compute technical indicators, OI analysis, basis
     """
-
-    def __init__(self, config_path: str = "configs/"):
-        self.config = load_config(config_path)
-        self.graph = None
-
-        self.data_agent = DataAgent(self.config.get('data', {}))
-        self.news_agent = NewsAgent(self.config.get('news', {}))
-        self.rl_agent = RLStrategyAgent(self.config.get('rl', {}))
-        self.execution_agent = ExecutionAgent(self.config.get('execution', {}))
-
-        self._build_graph()
-
-    def _build_graph(self):
-        workflow = StateGraph(TradingState)
-
-        workflow.add_node("data_agent", self._data_node)
-        workflow.add_node("news_agent", self._news_node)
-        workflow.add_node("rl_agent", self._rl_node)
-        workflow.add_node("execution_agent", self._execution_node)
-        workflow.add_node("risk_guard", self._risk_guard_node)
-
-        workflow.add_edge("data_agent", "news_agent")
-        workflow.add_edge("news_agent", "rl_agent")
-        workflow.add_edge("rl_agent", "execution_agent")
-        workflow.add_edge("execution_agent", "risk_guard")
-
-        workflow.set_entry_point("data_agent")
-
-        workflow.add_conditional_edges(
-            "risk_guard",
-            self._should_continue,
-            {
-                "continue": "data_agent",
-                "stop": "__end__"
-            }
+    logger.info("=" * 60)
+    logger.info("📊 DATA AGENT - Fetching Market Data")
+    logger.info("=" * 60)
+    
+    try:
+        from agents.data_agent import (
+            fetch_ohlcv,
+            compute_indicators,
+            init_data_agent
         )
-
-        self.graph = workflow.compile()
-
-
-    async def _data_node(self, state: TradingState) -> TradingState:
-        """
-        data agent node for fetchng and processing market data
-        """
-
-        try:
-            logger.info(f"DataAgent processing for symbols: {state.symbols}")
-
-            market_data = {}
-            for symbol in state.symbols:
-                df = await self.data_agent.fetch_ohlcv(
-                    symbol = symbol,
-                    interval="5m",
-                    lookback_period=100
-                )
-                
-                if self.data_agent.validate_data(df):
-                    market_data[symbol] = df
-                else:
-                    state.errors.append(f"Invalid data for {symbol}")
-                    continue
-            
-            state.market_data = market_data
-
-            technical_features = {}
-            for symbol, df in market_data.items():
-                features = self.data_agent.compute_indicators(df)
-                feature_array = self.data_agent.build_feature_frame(df, features)
-                technical_features[symbol] = feature_array
-
-            state.technical_features = technical_features
-            state.data_ready = True
-            
-            logger.info(f"DataAgent completed, processed {len(market_data)}")
+        import pandas as pd
         
-        except Exception as e:
-            logger.error(f"DataAgent error: {str(e)}")
-            state.errors.append(f"DataAgent: {str(e)}")
-
-        return state
-    
-    async def _news_node(self, state: TradingState) -> TradingState:
-        """
-        News agent node that fetches and analyzes sentiment
-        """
-
-        try:
-            if not state.data_ready:
-                raise ValueError("Data not ready for processing")
+        # Time metrics
+        time_metrics = calculate_time_metrics(state['timestamp'])
+        state['minutes_to_close'] = time_metrics['minutes_to_close']
+        state['session_phase'] = time_metrics['session_phase']
+        state['trading_allowed'] = time_metrics['trading_allowed']
+        
+        logger.info(f"Session: {state['session_phase']} | Time to close: {state['minutes_to_close']:.1f} mins")
+        
+        # Broker API keys
+        api_keys = state['broker_ctx']
+        
+        # Define indices to fetch (Phase 1: NIFTY only)
+        indices = ['NIFTY']  # Start with one, expand to BANKNIFTY, FINNIFTY later
+        
+        # Map to broker symbols (ICICI format)
+        symbol_map = {
+            'NIFTY': 'NIFTY 50',  # Adjust based on ICICI's actual symbol format
+            'BANKNIFTY': 'NIFTY BANK',
+            'FINNIFTY': 'NIFTY FIN SERVICE'
+        }
+        
+        price_data = {}
+        indicators = {}
+        oi_data = {}
+        basis_data = {}
+        
+        for index in indices:
+            broker_symbol = symbol_map.get(index, index)
             
-            logger.info("NewsAgent analyzing sentiments")
-
-            # Fetch news for all symbols
-            news_data = await self.news_agent.fetch_news_blobs(
-                symbols=state.symbols,
-                lookback_hours=24
-            )
-            
-            sentiment_features = {}
-            for symbol in state.symbols:
-                symbol_sentiment = self.news_agent.score_sentiment(
-                    symbol = symbol,
-                    news_data = news_data
-                )
-                sentiment_features[symbol] = self.news_agent.build_sentiment_features(
-                    symbol=symbol,
-                    sentiment_scores=symbol_sentiment,
-                    timestamp=state.timestamp
-                )
-
-                state.sentiment_features = sentiment_features
-                state.news_ready = True
-
-                logger.info("NewsAgent completed sentiment analysis")
-
-        except Exception as e:
-            logger.error(f"NewsAgent error: {str(e)}")
-            state.errors.append(f"NewsAgent: {str(e)}")
-            
-        return state
-    
-    async def _rl_node(self, state: TradingState) -> TradingState:
-        """RL Strategy Agent Node - Generate trading decisions"""
-        try:
-            if not (state.data_ready and state.news_ready):
-                raise ValueError("Data and news not ready for RL processing")
+            try:
+                # Fetch last 30 bars of 1-min data
+                end_date = state['timestamp'].strftime('%Y-%m-%d')
+                start_date = (state['timestamp'] - pd.Timedelta(days=1)).strftime('%Y-%m-%d')
                 
-            logger.info("RLAgent generating trading decisions")
-            
-            # Build state representations and generate actions
-            raw_actions = {}
-            position_sizes = {}
-            
-            for symbol in state.symbols:
-                # Combine technical and sentiment features
-                rl_state = self.rl_agent.build_state_representation(
-                    price_features=state.technical_features[symbol],
-                    tech_features=state.technical_features[symbol],
-                    sentiment_features=state.sentiment_features[symbol]
+                logger.info(f"Fetching {index} data from broker...")
+                
+                # Real OHLCV fetch from broker
+                ohlcv_data = fetch_ohlcv(
+                    symbols=[broker_symbol],
+                    interval='1minute',
+                    start=start_date,
+                    end=end_date,
+                    api_keys=api_keys
                 )
                 
-                # Sample action from policy
-                raw_action = self.rl_agent.sample_action(
-                    state=rl_state,
-                    mode="inference"
-                )
+                df = ohlcv_data.get(broker_symbol, pd.DataFrame())
                 
-                # Compute position size with risk controls
-                position_size = self.rl_agent.compute_position_size(
-                    state=rl_state,
-                    raw_action=raw_action,
-                    risk_params=self.rl_agent.risk_params
-                )
+                if df.empty:
+                    logger.warning(f"No data for {index}, using previous cached data")
+                    # Use cached data if available
+                    df = state.get('price_data', {}).get(index, {}).get('futures', pd.DataFrame())
                 
-                raw_actions[symbol] = raw_action
-                position_sizes[symbol] = position_size
-            
-            state.raw_actions = raw_actions
-            state.position_sizes = position_sizes
-            state.rl_ready = True
-            
-            logger.info(f"RLAgent completed. Generated {len(raw_actions)} decisions")
-            
-        except Exception as e:
-            logger.error(f"RLAgent error: {str(e)}")
-            state.errors.append(f"RLAgent: {str(e)}")
-            
-        return state
-    
-    async def _execution_node(self, state: TradingState) -> TradingState:
-        """Execution Agent Node - Prepare and route orders"""
-        try:
-            if not state.rl_ready:
-                raise ValueError("RL decisions not ready for execution")
-                
-            logger.info("ExecutionAgent preparing orders")
-            
-            # Get current portfolio state
-            current_portfolio = await self.execution_agent.get_portfolio_state()
-            state.current_positions = current_portfolio.get('positions', {})
-            
-            # Prepare orders for each symbol
-            pending_orders = []
-            
-            for symbol, target_position in state.position_sizes.items():
-                current_position = state.current_positions.get(symbol, 0.0)
-                
-                # Calculate required trade size
-                trade_size = target_position - current_position
-                
-                if abs(trade_size) > 0.001:  # Minimum trade threshold
-                    # Build order
-                    order = await self.execution_agent.build_order(
-                        symbol=symbol,
-                        size=trade_size,
-                        order_type="MARKET",
-                        time_in_force="IOC"
+                if not df.empty:
+                    # Take only last 30 bars for lookback
+                    df = df.tail(30)
+                    
+                    # Compute technical indicators
+                    df_with_indicators = compute_indicators(df)
+                    
+                    # Extract latest values for state
+                    latest = df_with_indicators.iloc[-1]
+                    
+                    indicators[index] = {
+                        'macd': latest.get('macd', 0.0),
+                        'rsi': latest.get('rsi', 50.0),
+                        'sma_5': latest.get('sma_5', latest['close']),
+                        'sma_20': latest.get('sma_20', latest['close']),
+                        'volatility_20': latest.get('volatility_20', 0.15),
+                        'volume_ratio': latest.get('volume_ratio', 1.0),
+                        'close': latest['close'],
+                        'high': latest['high'],
+                        'low': latest['low'],
+                        'volume': latest.get('volume', 0)
+                    }
+                    
+                    # Compute intraday-specific metrics
+                    session_high = df_with_indicators['high'].max()
+                    session_low = df_with_indicators['low'].min()
+                    current_price = latest['close']
+                    
+                    intraday_range_pct = (
+                        (current_price - session_low) / (session_high - session_low)
+                        if session_high > session_low else 0.5
                     )
                     
-                    # Pre-trade risk checks
-                    if self.execution_agent.pre_trade_checks(order, current_portfolio):
-                        pending_orders.append(order)
-                    else:
-                        state.errors.append(f"Pre-trade check failed for {symbol}")
-            
-            state.pending_orders = pending_orders
-            state.execution_ready = True
-            
-            logger.info(f"ExecutionAgent prepared {len(pending_orders)} orders")
-            
-        except Exception as e:
-            logger.error(f"ExecutionAgent error: {str(e)}")
-            state.errors.append(f"ExecutionAgent: {str(e)}")
-            
-        return state
-    
-    async def _risk_guard_node(self, state: TradingState) -> TradingState:
-        """Risk Guard Node - Final risk validation and execution"""
-        try:
-            if not state.execution_ready:
-                raise ValueError("Orders not ready for risk validation")
-                
-            logger.info("RiskGuard performing final validation")
-            
-            # Calculate portfolio-level risk metrics
-            risk_metrics = self._calculate_risk_metrics(state)
-            state.risk_metrics = risk_metrics
-            
-            # Portfolio exposure check
-            total_exposure = sum(abs(pos) for pos in state.position_sizes.values())
-            state.portfolio_exposure = total_exposure
-            
-            max_exposure = self.config.get('risk', {}).get('max_portfolio_exposure', 1.0)
-            
-            if total_exposure <= max_exposure:
-                # Execute approved orders
-                executed_trades = []
-                
-                for order in state.pending_orders:
-                    try:
-                        trade_result = await self.execution_agent.place_order(order)
-                        executed_trades.append(trade_result)
-                        logger.info(f"Executed order: {order['symbol']} {order['size']}")
+                    indicators[index]['intraday_range_pct'] = intraday_range_pct
+                    indicators[index]['session_high'] = session_high
+                    indicators[index]['session_low'] = session_low
+                    
+                    # VWAP calculation
+                    if 'volume' in df_with_indicators.columns:
+                        df_with_indicators['vwap'] = (
+                            (df_with_indicators['close'] * df_with_indicators['volume']).cumsum() /
+                            df_with_indicators['volume'].cumsum()
+                        )
+                        vwap = df_with_indicators['vwap'].iloc[-1]
+                        vwap_dist = (current_price - vwap) / vwap if vwap > 0 else 0.0
+                        indicators[index]['vwap'] = vwap
+                        indicators[index]['vwap_dist'] = vwap_dist
+                    
+                    # Open Interest analysis (if available in data)
+                    if 'oi' in df_with_indicators.columns:
+                        oi_current = df_with_indicators['oi'].iloc[-1]
+                        oi_prev = df_with_indicators['oi'].iloc[-2] if len(df_with_indicators) > 1 else oi_current
+                        oi_5bars_ago = df_with_indicators['oi'].iloc[-6] if len(df_with_indicators) > 5 else oi_current
                         
-                    except Exception as e:
-                        logger.error(f"Order execution failed: {str(e)}")
-                        state.errors.append(f"Execution failed: {str(e)}")
+                        oi_change_1bar = oi_current - oi_prev
+                        oi_change_5bar = oi_current - oi_5bars_ago
+                        oi_momentum = (oi_change_5bar / oi_5bars_ago * 100) if oi_5bars_ago > 0 else 0.0
+                        
+                        oi_data[index] = {
+                            'oi_current': oi_current,
+                            'oi_change_1bar': oi_change_1bar,
+                            'oi_change_5bar': oi_change_5bar,
+                            'oi_momentum': oi_momentum
+                        }
+                    else:
+                        oi_data[index] = {
+                            'oi_current': 0,
+                            'oi_change_1bar': 0,
+                            'oi_change_5bar': 0,
+                            'oi_momentum': 0.0
+                        }
+                    
+                    # Spot-Futures basis (for now, assume futures = spot, refine later)
+                    # TODO: Fetch actual spot index value separately
+                    spot_price = current_price  # Placeholder
+                    futures_price = current_price
+                    basis = futures_price - spot_price
+                    basis_pct = (basis / spot_price * 100) if spot_price > 0 else 0.0
+                    
+                    basis_data[index] = {
+                        'spot': spot_price,
+                        'futures': futures_price,
+                        'basis': basis,
+                        'basis_pct': basis_pct
+                    }
+                    
+                    # Store raw dataframe
+                    price_data[index] = {
+                        'futures': df_with_indicators,
+                        'spot': spot_price,
+                        'vix': None  # TODO: Fetch India VIX separately
+                    }
+                    
+                    logger.info(f"✅ {index} | Price: {current_price:.2f} | RSI: {indicators[index]['rsi']:.1f} | MACD: {indicators[index]['macd']:.2f}")
                 
-                state.executed_trades = executed_trades
-                state.risk_approved = True
-                
-                logger.info(f"RiskGuard approved and executed {len(executed_trades)} trades")
-                
-            else:
-                state.errors.append(f"Portfolio exposure {total_exposure:.2%} exceeds limit {max_exposure:.2%}")
-                logger.warning(f"Portfolio exposure limit exceeded: {total_exposure:.2%}")
-            
-        except Exception as e:
-            logger.error(f"RiskGuard error: {str(e)}")
-            state.errors.append(f"RiskGuard: {str(e)}")
-            
-        return state
+                else:
+                    logger.error(f"❌ No data available for {index}")
+                    state['errors'].append(f"DataAgent: No data for {index}")
+                    
+            except Exception as e:
+                logger.error(f"❌ Error processing {index}: {str(e)}")
+                state['errors'].append(f"DataAgent: {index} error - {str(e)}")
+        
+        # Update state
+        state['price_data'] = price_data
+        state['indicators'] = indicators
+        state['oi_data'] = oi_data
+        state['basis_data'] = basis_data
+        state['options_data'] = {}  # Placeholder for Day 1
+        
+        state['logs'].append(f"DataAgent: Processed {len(price_data)} indices")
+        logger.info(f"✅ Data Agent Complete - {len(price_data)} indices loaded")
+        
+    except Exception as e:
+        error_msg = f"DataAgent CRITICAL ERROR: {str(e)}\n{traceback.format_exc()}"
+        logger.error(error_msg)
+        state['errors'].append(error_msg)
     
-    def _calculate_risk_metrics(self, state: TradingState) -> Dict[str, Any]:
-        """Calculate comprehensive risk metrics"""
-        
-        # Get current positions and market data
-        positions = state.position_sizes
-        market_data = state.market_data
-        
-        # Calculate metrics
-        risk_metrics = {
-            'exposure_pct': sum(abs(pos) for pos in positions.values()),
-            'long_exposure': sum(max(0, pos) for pos in positions.values()),
-            'short_exposure': sum(min(0, pos) for pos in positions.values()),
-            'net_exposure': sum(positions.values()),
-            'num_positions': len([p for p in positions.values() if abs(p) > 0.001]),
-            'max_position': max(abs(pos) for pos in positions.values()) if positions else 0,
-            'timestamp': state.timestamp.isoformat()
+    return state
+
+
+# ==================== NODE 2: NEWS AGENT ====================
+
+def news_agent_node(state: TradingState) -> TradingState:
+    """
+    Sentiment analysis - Day 1 returns zeros
+    Production: Fetch from Twitter/Bloomberg APIs
+    """
+    logger.info("📰 NEWS AGENT - Analyzing Sentiment")
+    
+    try:
+        # Day 1 MVP: Return neutral sentiment
+        state['sentiment_scores'] = {
+            'market_sentiment_5min': 0.0,
+            'sentiment_momentum_15min': 0.0,
+            'breaking_news_flag': False,
+            'high_impact_news': None
         }
         
-        # Add sector/asset class concentration if available
-        # This would be enhanced with actual sector classification
-        risk_metrics['sector_concentration'] = self._calculate_sector_concentration(positions)
+        state['logs'].append("NewsAgent: Sentiment neutral (MVP)")
+        logger.info("✅ News Agent Complete - Neutral sentiment")
         
-        return risk_metrics
-    
-    def _calculate_sector_concentration(self, positions: Dict[str, float]) -> Dict[str, float]:
-        """Calculate sector concentration (placeholder implementation)"""
-        # In a real implementation, you would map symbols to sectors
-        # and calculate concentration metrics
-        return {
-            'max_sector_exposure': 0.3,  # Placeholder
-            'sector_count': len(positions),
-            'herfindahl_index': 0.15  # Placeholder concentration index
+    except Exception as e:
+        error_msg = f"NewsAgent ERROR: {str(e)}"
+        logger.error(error_msg)
+        state['errors'].append(error_msg)
+        # Safe default
+        state['sentiment_scores'] = {
+            'market_sentiment_5min': 0.0,
+            'sentiment_momentum_15min': 0.0,
+            'breaking_news_flag': False,
+            'high_impact_news': None
         }
     
-    def _should_continue(self, state: TradingState) -> str:
-        """Determine if workflow should continue or stop"""
-        
-        # Check for critical errors
-        critical_errors = [error for error in state.errors 
-                          if any(keyword in error.lower() 
-                                for keyword in ['critical', 'fatal', 'connection'])]
-        
-        if critical_errors:
-            logger.error(f"Critical errors detected: {critical_errors}")
-            return "stop"
-        
-        # Check if we should continue trading
-        current_hour = state.timestamp.hour
-        market_hours = self.config.get('trading', {}).get('market_hours', [9, 16])
-        
-        if market_hours[0] <= current_hour <= market_hours[1]:
-            return "continue"
-        else:
-            logger.info("Outside market hours, stopping workflow")
-            return "stop"
+    return state
+
+
+# ==================== NODE 3: RL AGENT ====================
+
+def rl_agent_node(state: TradingState) -> TradingState:
+    """
+    RL Strategy Agent - Make trading decision
+    Day 1: Simple rule-based logic (momentum + RSI)
+    Production: DQN/PPO model inference
+    """
+    logger.info("🤖 RL AGENT - Computing Actions")
     
-    async def run_single_cycle(self, symbols: List[str], timestamp: datetime = None) -> TradingState:
-        """Run a single trading cycle"""
-        
-        if timestamp is None:
-            timestamp = datetime.now()
-        
-        # Initialize state
-        initial_state = TradingState(
-            symbols=symbols,
-            timestamp=timestamp,
-            market_data={},
-            technical_features={},
-            sentiment_features={},
-            rl_state=None,
-            raw_actions={},
-            position_sizes={},
-            portfolio_exposure=0.0,
-            current_positions={},
-            risk_metrics={},
-            pending_orders=[],
-            executed_trades=[]
+    try:
+        from agents.rl_strategy_agent import (
+            build_state_representation,
+            sample_action,
+            compute_position_size
         )
         
-        logger.info(f"Starting trading cycle for {len(symbols)} symbols at {timestamp}")
+        # Check if trading is allowed
+        if not state['trading_allowed']:
+            logger.warning("⚠️ Trading NOT allowed - too close to market close")
+            state['rl_action'] = {}
+            state['logs'].append("RLAgent: Trading blocked - near close")
+            return state
         
-        # Execute workflow
-        try:
-            final_state = await self.graph.ainvoke(initial_state)
-            
-            # Log final results
-            if final_state.risk_approved:
-                logger.info(f"Trading cycle completed successfully. "
-                           f"Executed {len(final_state.executed_trades)} trades")
-            else:
-                logger.warning(f"Trading cycle completed with errors: {final_state.errors}")
-            
-            return final_state
-            
-        except Exception as e:
-            logger.error(f"Workflow execution failed: {str(e)}")
-            initial_state.errors.append(f"Workflow: {str(e)}")
-            return initial_state
-    
-    async def run_continuous(self, symbols: List[str], interval_minutes: int = 5):
-        """Run continuous trading with specified interval"""
+        rl_actions = {}
         
-        logger.info(f"Starting continuous trading for {symbols} every {interval_minutes} minutes")
-        
-        while True:
+        for index in state['indicators'].keys():
             try:
-                # Run trading cycle
-                result = await self.run_single_cycle(symbols)
+                # Build state vector
+                state_vector = build_state_representation(
+                    price_feats=state['price_data'].get(index, {}),
+                    tech_feats=state['indicators'].get(index, {}),
+                    senti_feats=state['sentiment_scores'],
+                    basis=state['basis_data'].get(index, {}),
+                    oi=state['oi_data'].get(index, {}),
+                    vix=state['price_data'].get(index, {}).get('vix'),
+                    time_feats={
+                        'minutes_to_close': state['minutes_to_close'],
+                        'session_phase': state['session_phase']
+                    },
+                    options_feats=state['options_data'].get(index, {})
+                )
                 
-                # Log results
-                if result.errors:
-                    logger.warning(f"Cycle completed with errors: {result.errors}")
+                # Sample action
+                action_dict = sample_action(
+                    state=state_vector,
+                    mode='eval',
+                    time_remaining=state['minutes_to_close']
+                )
                 
-                # Wait for next cycle
-                await asyncio.sleep(interval_minutes * 60)
+                # Compute position size
+                position_size = compute_position_size(
+                    state=state_vector,
+                    raw_action=action_dict['action'],
+                    risk_params={'max_lots': 3, 'target_vol': 0.12},  # Conservative for Day 1
+                    margin_available=100000,  # TODO: Get from broker
+                    time_remaining=state['minutes_to_close'],
+                    mis_mode=True
+                )
                 
-            except KeyboardInterrupt:
-                logger.info("Continuous trading stopped by user")
-                break
+                rl_actions[index] = {
+                    'raw_action': action_dict['action'],
+                    'position_size': position_size,
+                    'confidence': action_dict.get('confidence', 0.0),
+                    'aggression': action_dict.get('aggression_multiplier', 1.0)
+                }
+                
+                logger.info(f"✅ {index} | Action: {action_dict['action']:.2f} | Size: {position_size} lots")
+                
             except Exception as e:
-                logger.error(f"Continuous trading error: {str(e)}")
-                await asyncio.sleep(60)  # Wait 1 minute before retrying
+                logger.error(f"❌ Error processing RL for {index}: {str(e)}")
+                state['errors'].append(f"RLAgent: {index} error - {str(e)}")
+        
+        state['rl_action'] = rl_actions
+        state['logs'].append(f"RLAgent: Actions computed for {len(rl_actions)} indices")
+        logger.info(f"✅ RL Agent Complete - {len(rl_actions)} actions")
+        
+    except Exception as e:
+        error_msg = f"RLAgent CRITICAL ERROR: {str(e)}\n{traceback.format_exc()}"
+        logger.error(error_msg)
+        state['errors'].append(error_msg)
+        state['rl_action'] = {}
+    
+    return state
 
 
-# Example usage
-async def main():
-    """Example of how to use the trading workflow"""
+# ==================== NODE 4: EXECUTION AGENT ====================
+
+def execution_agent_node(state: TradingState) -> TradingState:
+    """
+    Convert RL actions into broker orders
+    """
+    logger.info("💼 EXECUTION AGENT - Building Orders")
     
-    # Initialize workflow
-    workflow = TradingWorkflow()
+    try:
+        from agents.execution_agent import (
+            build_order,
+            pre_trade_checks,
+            check_time_constraints
+        )
+        
+        # Time check
+        if not check_time_constraints(state['timestamp']):
+            logger.warning("⚠️ Time constraints violated - no new orders")
+            state['orders'] = []
+            return state
+        
+        orders = []
+        
+        for index, action in state['rl_action'].items():
+            position_size = action.get('position_size', 0)
+            
+            if position_size == 0:
+                logger.info(f"{index}: No position change (size=0)")
+                continue
+            
+            try:
+                # Get current position from state
+                # TODO: Fetch actual positions from broker
+                current_position = state['positions'].get(index, {}).get('quantity', 0)
+                
+                # Lot size mapping
+                lot_sizes = {
+                    'NIFTY': 50,
+                    'BANKNIFTY': 15,
+                    'FINNIFTY': 40
+                }
+                lot_size = lot_sizes.get(index, 50)
+                
+                # Calculate delta
+                target_lots = position_size
+                current_lots = current_position // lot_size
+                delta_lots = target_lots - current_lots
+                
+                if delta_lots != 0:
+                    # Get current price
+                    current_price = state['indicators'][index]['close']
+                    
+                    # Build order
+                    order = build_order(
+                        signal={'action': 'BUY' if delta_lots > 0 else 'SELL'},
+                        price=current_price,
+                        size=abs(delta_lots),
+                        tif='DAY',
+                        contract_spec={'symbol': index, 'lot_size': lot_size},
+                        order_type='MIS'
+                    )
+                    
+                    # Pre-trade checks
+                    if pre_trade_checks(
+                        order=order,
+                        portfolio=state['positions'],
+                        limits={'max_exposure_pct': 50},
+                        margin_available=100000,
+                        current_time=state['timestamp']
+                    ):
+                        orders.append(order)
+                        logger.info(f"✅ {index} | Order: {order['action']} {order['quantity']} @ {order['price']:.2f}")
+                    else:
+                        logger.warning(f"⚠️ {index} | Pre-trade check FAILED")
+                
+            except Exception as e:
+                logger.error(f"❌ Error building order for {index}: {str(e)}")
+                state['errors'].append(f"ExecutionAgent: {index} error - {str(e)}")
+        
+        state['orders'] = orders
+        state['logs'].append(f"ExecutionAgent: {len(orders)} orders created")
+        logger.info(f"✅ Execution Agent Complete - {len(orders)} orders")
+        
+    except Exception as e:
+        error_msg = f"ExecutionAgent CRITICAL ERROR: {str(e)}\n{traceback.format_exc()}"
+        logger.error(error_msg)
+        state['errors'].append(error_msg)
+        state['orders'] = []
     
-    # Define trading universe
-    symbols = ["NIFTY", "BANKNIFTY", "RELIANCE", "TCS", "HDFC"]
+    return state
+
+
+# ==================== NODE 5: RISK GUARD ====================
+
+def risk_guard_node(state: TradingState) -> TradingState:
+    """
+    Risk management - validate exposure, margin, VIX
+    """
+    logger.info("🛡️ RISK GUARD - Checking Limits")
     
-    # Run single cycle
-    result = await workflow.run_single_cycle(symbols)
+    try:
+        # Calculate exposures
+        total_notional = 0
+        margin_required = 0
+        
+        for order in state['orders']:
+            notional = order['price'] * order['quantity']
+            total_notional += notional
+            # MIS margin ~15% of notional
+            margin_required += notional * 0.15
+        
+        # Capital limits
+        total_capital = 500000  # TODO: Get from config
+        exposure_pct = (total_notional / total_capital) * 100
+        margin_pct = (margin_required / total_capital) * 100
+        
+        # VIX check (if available)
+        vix_ok = True
+        for index in state['price_data'].keys():
+            vix = state['price_data'][index].get('vix')
+            if vix and vix > 20:
+                vix_ok = False
+                logger.warning(f"⚠️ VIX HIGH: {vix:.1f}")
+        
+        # Risk status
+        risk_status = {
+            'exposure_pct': exposure_pct,
+            'margin_pct': margin_pct,
+            'total_notional': total_notional,
+            'margin_required': margin_required,
+            'max_exposure_ok': exposure_pct < 50,
+            'margin_ok': margin_pct < 50,
+            'vix_ok': vix_ok,
+            'risk_breach': False
+        }
+        
+        # Check for breaches
+        if not (risk_status['max_exposure_ok'] and risk_status['margin_ok'] and risk_status['vix_ok']):
+            risk_status['risk_breach'] = True
+            state['orders'] = []  # CANCEL ALL ORDERS
+            logger.critical("🚨 RISK BREACH - ALL ORDERS CANCELLED")
+        else:
+            logger.info(f"✅ Risk OK | Exposure: {exposure_pct:.1f}% | Margin: {margin_pct:.1f}%")
+        
+        state['risk_status'] = risk_status
+        state['logs'].append(f"RiskGuard: Exposure {exposure_pct:.1f}%, Breach: {risk_status['risk_breach']}")
+        
+    except Exception as e:
+        error_msg = f"RiskGuard ERROR: {str(e)}"
+        logger.error(error_msg)
+        state['errors'].append(error_msg)
+        # On error, be conservative
+        state['risk_status'] = {'risk_breach': True}
+        state['orders'] = []
     
-    print(f"Trading cycle completed:")
-    print(f"Errors: {result.errors}")
-    print(f"Executed trades: {len(result.executed_trades)}")
-    print(f"Portfolio exposure: {result.portfolio_exposure:.2%}")
+    return state
+
+
+# ==================== NODE 6: TIME GUARD ====================
+
+def time_guard_node(state: TradingState) -> TradingState:
+    """
+    TIME GUARD - The KILL SWITCH
+    Force exit all positions if near market close
+    """
+    logger.info("⏰ TIME GUARD - Enforcing Time Limits")
     
-    # For continuous trading (uncomment to run)
-    # await workflow.run_continuous(symbols, interval_minutes=5)
+    try:
+        minutes_to_close = state['minutes_to_close']
+        
+        # Time thresholds
+        REDUCE_AFTER = 45  # 2:30 PM
+        NO_NEW_AFTER = 15  # 3:00 PM
+        FORCE_EXIT_AT = 5  # 3:10 PM
+        EMERGENCY_AT = 0   # 3:15 PM
+        
+        # Determine alert level
+        if minutes_to_close < 0:
+            alert_level = 'EMERGENCY'
+        elif minutes_to_close < FORCE_EXIT_AT:
+            alert_level = 'CRITICAL'
+        elif minutes_to_close < NO_NEW_AFTER:
+            alert_level = 'WARNING'
+        elif minutes_to_close < REDUCE_AFTER:
+            alert_level = 'CAUTION'
+        else:
+            alert_level = 'NORMAL'
+        
+        time_guard_status = {
+            'can_enter_new': minutes_to_close >= NO_NEW_AFTER,
+            'should_reduce': minutes_to_close < REDUCE_AFTER,
+            'must_exit_all': minutes_to_close < FORCE_EXIT_AT,
+            'emergency_mode': minutes_to_close < 0,
+            'alert_level': alert_level,
+            'minutes_to_close': minutes_to_close
+        }
+        
+        # Log alert
+        if alert_level == 'EMERGENCY':
+            logger.critical("🚨🚨🚨 EMERGENCY: MARKET CLOSED - BROKER WILL AUTO-SQUARE!")
+        elif alert_level == 'CRITICAL':
+            logger.critical(f"🚨 CRITICAL: {minutes_to_close:.1f} mins to close - FORCE EXIT ALL!")
+        elif alert_level == 'WARNING':
+            logger.warning(f"⚠️ WARNING: {minutes_to_close:.1f} mins to close - No new positions!")
+        elif alert_level == 'CAUTION':
+            logger.warning(f"⚠️ CAUTION: {minutes_to_close:.1f} mins to close - Reduce exposure")
+        
+        # FORCE EXIT LOGIC
+        if time_guard_status['must_exit_all']:
+            logger.critical("🚨 TIME GUARD: FORCING EXIT OF ALL POSITIONS")
+            
+            # Cancel all entry orders
+            state['orders'] = []
+            
+            # Create exit orders for all open positions
+            exit_orders = []
+            for symbol, position in state['positions'].items():
+                if position.get('quantity', 0) != 0:
+                    qty = position['quantity']
+                    price = state['indicators'].get(symbol, {}).get('close', 0)
+                    
+                    exit_order = {
+                        'symbol': symbol,
+                        'action': 'SELL' if qty > 0 else 'BUY',
+                        'quantity': abs(qty),
+                        'price': price,
+                        'order_type': 'MARKET',
+                        'product_type': 'MIS',
+                        'emergency_exit': True,
+                        'reason': 'TIME_GUARD_FORCE_EXIT'
+                    }
+                    exit_orders.append(exit_order)
+            
+            state['orders'] = exit_orders
+            logger.critical(f"🚨 Created {len(exit_orders)} emergency exit orders")
+        
+        # Block new entries after 3:00 PM
+        elif not time_guard_status['can_enter_new']:
+            # Keep only exit orders
+            exit_only = [o for o in state['orders'] if o.get('emergency_exit', False)]
+            state['orders'] = exit_only
+            logger.warning(f"⚠️ TIME GUARD: Blocked new entries, {len(exit_only)} exits allowed")
+        
+        state['time_guard_status'] = time_guard_status
+        state['logs'].append(f"TimeGuard: {alert_level} - {minutes_to_close:.1f} mins to close")
+        logger.info(f"✅ Time Guard Complete - Alert: {alert_level}")
+        
+    except Exception as e:
+        error_msg = f"TimeGuard ERROR: {str(e)}"
+        logger.error(error_msg)
+        state['errors'].append(error_msg)
+        # On error, assume emergency
+        state['time_guard_status'] = {
+            'can_enter_new': False,
+            'must_exit_all': True,
+            'emergency_mode': True,
+            'alert_level': 'EMERGENCY'
+        }
+    
+    return state
+
+
+# ==================== WORKFLOW BUILDER ====================
+
+def create_intraday_workflow() -> Any:
+    """Build and compile the workflow"""
+    logger.info("🔧 Building LangGraph Workflow...")
+    
+    workflow = StateGraph(TradingState)
+    
+    # Add nodes
+    workflow.add_node("data_agent", data_agent_node)
+    workflow.add_node("news_agent", news_agent_node)
+    workflow.add_node("rl_agent", rl_agent_node)
+    workflow.add_node("execution_agent", execution_agent_node)
+    workflow.add_node("risk_guard", risk_guard_node)
+    workflow.add_node("time_guard", time_guard_node)
+    
+    # Linear flow
+    workflow.set_entry_point("data_agent")
+    workflow.add_edge("data_agent", "news_agent")
+    workflow.add_edge("news_agent", "rl_agent")
+    workflow.add_edge("rl_agent", "execution_agent")
+    workflow.add_edge("execution_agent", "risk_guard")
+    workflow.add_edge("risk_guard", "time_guard")
+    workflow.add_edge("time_guard", END)
+    
+    app = workflow.compile()
+    logger.info("✅ Workflow Compiled")
+    
+    return app
+
+
+def initialize_state(broker_ctx: Dict[str, str]) -> TradingState:
+    """Initialize trading state with broker context"""
+    now = datetime.now()
+    time_metrics = calculate_time_metrics(now)
+    
+    return {
+        'timestamp': now,
+        'current_time': now.strftime("%H:%M:%S"),
+        'minutes_to_close': time_metrics['minutes_to_close'],
+        'session_phase': time_metrics['session_phase'],
+        'trading_allowed': time_metrics['trading_allowed'],
+        'price_data': {},
+        'indicators': {},
+        'oi_data': {},
+        'basis_data': {},
+        'options_data': {},
+        'sentiment_scores': {},
+        'rl_action': {},
+        'orders': [],
+        'positions': {},  # TODO: Fetch from broker
+        'risk_status': {},
+        'time_guard_status': {},
+        'metrics': {
+            'realized_pnl': 0.0,
+            'unrealized_pnl': 0.0,
+            'num_trades_today': 0
+        },
+        'broker_ctx': broker_ctx,
+        'errors': [],
+        'logs': []
+    }
+
+
+# ==================== MAIN ====================
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    import os
+    from dotenv import load_dotenv
+    
+    load_dotenv()
+    
+    logger.info("=" * 80)
+    logger.info("🚀 INTRADAY TRADING SYSTEM - DAY 1 PRODUCTION")
+    logger.info("=" * 80)
+    
+    # Get broker credentials from environment
+    broker_ctx = {
+        'app_key': os.getenv('ICICI_APP_KEY'),
+        'api_session_token': os.getenv('ICICI_API_SESSION_TOKEN')
+    }
+    
+    if not broker_ctx['app_key'] or not broker_ctx['api_session_token']:
+        logger.critical("❌ MISSING BROKER CREDENTIALS - Set ICICI_APP_KEY and ICICI_API_SESSION_TOKEN")
+        exit(1)
+    
+    # Create workflow
+    app = create_intraday_workflow()
+    
+    # Initialize state
+    initial_state = initialize_state(broker_ctx)
+    
+    logger.info(f"\n📋 Initial State:")
+    logger.info(f"  Timestamp: {initial_state['timestamp']}")
+    logger.info(f"  Time to Close: {initial_state['minutes_to_close']:.1f} mins")
+    logger.info(f"  Session: {initial_state['session_phase']}")
+    logger.info(f"  Trading Allowed: {initial_state['trading_allowed']}\n")
+    
+    # Run workflow
+    try:
+        logger.info("🎬 Starting workflow execution...\n")
+        final_state = app.invoke(initial_state)
+        
+        logger.info("\n" + "=" * 80)
+        logger.info("✅ WORKFLOW COMPLETED")
+        logger.info("=" * 80)
+        
+        # Summary
+        logger.info(f"\n📊 EXECUTION SUMMARY:")
+        logger.info(f"  Orders Created: {len(final_state['orders'])}")
+        logger.info(f"  Risk Breach: {final_state.get('risk_status', {}).get('risk_breach', False)}")
+        logger.info(f"  Time Alert: {final_state.get('time_guard_status', {}).get('alert_level', 'N/A')}")
+        logger.info(f"  Errors: {len(final_state['errors'])}")
+        logger.info(f"  Logs: {len(final_state['logs'])}")
+        
+        # Show orders
+        if final_state['orders']:
+            logger.info(f"\n📝 ORDERS TO EXECUTE:")
+            for i, order in enumerate(final_state['orders'], 1):
+                logger.info(f"  {i}. {order['action']} {order['quantity']} {order['symbol']} @ {order.get('price', 'MARKET')}")
+        else:
+            logger.info("\n📝 No orders to execute")
+        
+        # Show errors
+        if final_state['errors']:
+            logger.error("\n❌ ERRORS ENCOUNTERED:")
+            for error in final_state['errors']:
+                logger.error(f"  - {error}")
+        
+        # Show execution log
+        if final_state['logs']:
+            logger.info("\n📋 EXECUTION LOG:")
+            for log in final_state['logs']:
+                logger.info(f"  - {log}")
+        
+        logger.info("\n" + "=" * 80)
+        
+    except Exception as e:
+        logger.critical(f"\n💥 WORKFLOW FAILED: {str(e)}")
+        logger.critical(traceback.format_exc())
+        raise

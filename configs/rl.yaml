@@ -1,0 +1,164 @@
+# RL Configuration for Intraday Index F&O Trading
+# Day 1: Rule-based logic
+# Future: DQN/PPO/A2C models
+
+# ==================== ALGORITHM ====================
+algorithm:
+  type: "rule_based"  # Day 1: rule_based, Later: DQN, PPO, A2C
+  intraday_mode: true
+  
+# ==================== EPISODE ====================
+episode:
+  definition: "single_trading_day"
+  start_time: "09:15:00"
+  end_time: "15:15:00"
+  duration_minutes: 360
+  pre_market_start: "09:00:00"
+
+# ==================== STATE FEATURES ====================
+state:
+  lookback_window: 30  # 30 bars (30 mins at 1-min)
+  bar_interval: "1min"
+  
+  # Time features (CRITICAL)
+  time_features:
+    - minutes_to_close
+    - minutes_since_open
+    - session_phase
+    - intraday_range_pct
+  
+  # Technical indicators (fast for intraday)
+  technical_indicators:
+    macd:
+      short: 5
+      long: 13
+      signal: 5
+    rsi:
+      period: 9
+    sma:
+      periods: [5, 20]
+    volatility:
+      window: 20
+    vwap: true
+    volume_surge: true
+
+# ==================== ACTION SPACE ====================
+action_space:
+  type: "discrete"
+  actions: [-1, 0, 1]  # Short, Hold, Long
+
+# ==================== REWARD FUNCTION ====================
+reward:
+  type: "intraday_pnl"
+  
+  transaction_costs:
+    futures_bp: 2.0  # 2 bps
+    options_bp: 8.0  # 8 bps
+  
+  time_penalty:
+    enabled: true
+    weight: 0.1
+  
+  flat_by_close_bonus:
+    enabled: true
+    bonus_value: 0.5
+    threshold_time: "15:10:00"
+
+# ==================== TRAINING (Future) ====================
+training:
+  learning_rate:
+    critic: 0.0001
+    actor: 0.0001
+  
+  gamma: 0.3  # Short horizon
+  
+  replay_buffer:
+    size: 5000
+    batch_size: 64
+  
+  epsilon:
+    start: 0.5
+    end: 0.01
+    decay_episodes: 100
+
+# ==================== NETWORK (Future) ====================
+network:
+  backbone: "lstm"
+  lstm_layers:
+    - units: 32
+      return_sequences: true
+    - units: 16
+      return_sequences: false
+  
+  activation: "leaky_relu"
+  dropout: 0.2
+
+# ==================== POSITION SIZING ====================
+position_sizing:
+  target_volatility: 0.12  # 12% annual
+  max_lots_per_index: 3  # Conservative for Day 1
+  max_leverage: 5.0
+  
+  time_based_scaling:
+    enabled: true
+    scale_after_time: "14:30:00"
+    scale_factor: 0.5
+
+# ==================== RISK MANAGEMENT ====================
+risk:
+  stop_loss:
+    enabled: true
+    percent: 1.5  # 1.5% intraday
+    type: "trailing"
+  
+  take_profit:
+    enabled: true
+    percent: 3.0
+  
+  drawdown:
+    max_intraday_dd_pct: 3.0
+    halt_trading: true
+  
+  vix_threshold:
+    max_vix: 20.0
+    action: "reduce_positions"
+    reduce_factor: 0.5
+
+# ==================== TIME CONSTRAINTS ====================
+time_constraints:
+  normal_trading_end: "15:00:00"
+  reduce_positions_after: "14:30:00"
+  force_exit_time: "15:10:00"
+  emergency_exit_time: "15:15:00"
+  opening_range_duration_mins: 30
+
+# ==================== MARGIN ====================
+margin:
+  mode: "MIS"
+  
+  mis_margin_per_lot:
+    NIFTY: 60000
+    BANKNIFTY: 75000
+    FINNIFTY: 50000
+  
+  max_margin_utilization_pct: 50
+
+# ==================== UNIVERSE ====================
+universe:
+  phase1: ["NIFTY"]  # Start with one
+  phase2: ["NIFTY", "BANKNIFTY"]
+  phase3: ["NIFTY", "BANKNIFTY", "FINNIFTY"]
+  current_phase: "phase1"
+
+# ==================== RULE-BASED LOGIC (Day 1) ====================
+rule_based:
+  # Simple momentum + RSI strategy
+  buy_conditions:
+    rsi_lower: 40
+    macd_positive: true
+  
+  sell_conditions:
+    rsi_upper: 60
+    macd_negative: true
+  
+  hold_otherwise: true
