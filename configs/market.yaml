@@ -1,32 +1,175 @@
-# SuperTrader.AI Market Configuration
-# Contains market specifications, trading sessions, costs, and risk parameters
-# Version: 1.0 | Last Updated: 2025-10-01
+# SuperTrader.AI Market Configuration - Index Futures Focus
+# Contains NSE Index Futures specifications, trading sessions, costs, and risk parameters
+# Version: 2.0 | Last Updated: 2025-10-03 | Focus: Index Futures Trading
 
 metadata:
-  version: "1.0"
-  last_updated: "2025-10-01"
-  description: "NSE F&O market configuration for SuperTrader.AI"
+  version: "2.0"
+  last_updated: "2025-10-03"
+  description: "NSE Index Futures market configuration for SuperTrader.AI"
   maintainer: "SuperTrader.AI Team"
+  focus: "Index Futures Trading System"
 
-# Trading session timings for NSE
+# NSE Index Futures Universe - Liquid Contracts Only
+index_futures:
+  # Tier 1: Ultra High Liquidity (Primary Focus)
+  tier_1_ultra_liquid:
+    NIFTY:
+      symbol: "NIFTY"
+      description: "Nifty 50 Index Futures"
+      lot_size: 50
+      tick_size: 0.05
+      point_value_inr: 50.0              # ₹50 per index point
+      margin_nrml_pct: 10.0              # ~10% SPAN margin
+      margin_mis_pct: 5.0                # ~5% MIS margin
+      avg_daily_volume_lots: 500000      # ~5 lakh lots daily
+      avg_daily_oi_lots: 2000000         # ~20 lakh lots OI
+      contract_months: ["current", "next", "far"]
+      rollover_day: "last_thursday"
+      trading_hours: "09:15-15:30"
+      settlement: "cash_settled"
+      underlying: "NIFTY_50_INDEX"
+      
+    BANKNIFTY:
+      symbol: "BANKNIFTY"
+      description: "Bank Nifty Index Futures" 
+      lot_size: 15
+      tick_size: 0.05
+      point_value_inr: 15.0              # ₹15 per index point
+      margin_nrml_pct: 12.0              # Higher margin due to volatility
+      margin_mis_pct: 6.0
+      avg_daily_volume_lots: 300000      # ~3 lakh lots daily
+      avg_daily_oi_lots: 1000000         # ~10 lakh lots OI
+      contract_months: ["current", "next", "far"]
+      rollover_day: "last_thursday"
+      trading_hours: "09:15-15:30"
+      settlement: "cash_settled"
+      underlying: "BANK_NIFTY_INDEX"
+
+  # Tier 2: High Liquidity (Secondary Focus)  
+  tier_2_liquid:
+    FINNIFTY:
+      symbol: "FINNIFTY"
+      description: "Financial Services Index Futures"
+      lot_size: 25
+      tick_size: 0.05
+      point_value_inr: 25.0
+      margin_nrml_pct: 11.0
+      margin_mis_pct: 5.5
+      avg_daily_volume_lots: 100000      # ~1 lakh lots daily
+      avg_daily_oi_lots: 400000          # ~4 lakh lots OI
+      contract_months: ["current", "next", "far"]
+      rollover_day: "last_thursday"
+      trading_hours: "09:15-15:30"
+      settlement: "cash_settled"
+      underlying: "NIFTY_FIN_SERVICES_INDEX"
+      
+    MIDCPNIFTY:
+      symbol: "MIDCPNIFTY"
+      description: "Nifty Midcap Select Index Futures"
+      lot_size: 75
+      tick_size: 0.05
+      point_value_inr: 75.0
+      margin_nrml_pct: 13.0              # Higher margin for midcap volatility
+      margin_mis_pct: 6.5
+      avg_daily_volume_lots: 50000       # ~50k lots daily
+      avg_daily_oi_lots: 200000          # ~2 lakh lots OI
+      contract_months: ["current", "next", "far"]
+      rollover_day: "last_thursday"
+      trading_hours: "09:15-15:30"
+      settlement: "cash_settled"
+      underlying: "NIFTY_MIDCAP_SELECT_INDEX"
+
+  # Tier 3: Medium Liquidity (Opportunistic)
+  tier_3_medium:
+    CNXPHARMA:
+      symbol: "CNXPHARMA"
+      description: "CNX Pharma Index Futures"
+      lot_size: 30
+      tick_size: 0.05
+      point_value_inr: 30.0
+      margin_nrml_pct: 14.0
+      margin_mis_pct: 7.0
+      avg_daily_volume_lots: 25000       # ~25k lots daily
+      avg_daily_oi_lots: 100000          # ~1 lakh lots OI
+      contract_months: ["current", "next"]
+      rollover_day: "last_thursday"
+      trading_hours: "09:15-15:30"
+      settlement: "cash_settled"
+      underlying: "CNX_PHARMA_INDEX"
+      
+    CNXIT:
+      symbol: "CNXIT"
+      description: "CNX IT Index Futures"
+      lot_size: 50
+      tick_size: 0.05
+      point_value_inr: 50.0
+      margin_nrml_pct: 12.0
+      margin_mis_pct: 6.0
+      avg_daily_volume_lots: 40000       # ~40k lots daily
+      avg_daily_oi_lots: 150000          # ~1.5 lakh lots OI
+      contract_months: ["current", "next"]
+      rollover_day: "last_thursday"
+      trading_hours: "09:15-15:30"
+      settlement: "cash_settled"
+      underlying: "CNX_IT_INDEX"
+
+# Contract specifications and rollover mechanics
+contract_specifications:
+  # Monthly contract cycle
+  contract_cycle:
+    current_month: "Near month contract - highest liquidity"
+    next_month: "Second month contract - medium liquidity"  
+    far_month: "Third month contract - lower liquidity"
+    
+  # Rollover specifications
+  rollover_mechanics:
+    rollover_date: "last_thursday_of_expiry_month"
+    rollover_time: "15:30:00"
+    notice_period_days: 5               # Start monitoring 5 days before
+    auto_rollover_threshold_days: 2     # Auto-rollover 2 days before expiry
+    rollover_spread_monitoring: true    # Monitor calendar spreads
+    
+  # Contract naming convention
+  naming_convention:
+    format: "{INDEX}{YYYY}{MM}{DD}"     # e.g., NIFTY20241226
+    weekly_format: "{INDEX}{YY}{MMM}{W}{DD}"  # e.g., NIFTY24DEC1W26
+    
+  # Settlement specifications  
+  settlement:
+    settlement_type: "cash_settlement"
+    settlement_price_method: "last_half_hour_vwap"  # VWAP of last 30 minutes
+    settlement_time: "15:30:00"
+    final_settlement_day: "expiry_day"
+
+# Trading session timings for NSE Index Futures
 market_sessions:
-  nse:
+  nse_derivatives:
     pre_open:
       start: "09:00:00"
       end: "09:15:00"
-      description: "Price discovery session - no trading, only order matching"
+      description: "Price discovery session - order matching for index futures"
     
     regular_trading:
       start: "09:15:00" 
       end: "15:30:00"
-      description: "Main trading session for equity and derivatives"
+      description: "Main trading session for index futures and options"
     
     post_close:
       start: "15:40:00"
-      end: "16:00:00"
-      description: "Post-market session for closing price discovery"
+      end: "16:00:00"  
+      description: "Closing price calculation period"
     
     timezone: "Asia/Kolkata"
+    
+  # Special sessions
+  special_sessions:
+    muhurat_trading:
+      duration_minutes: 60
+      description: "Diwali special session"
+    
+    pre_expiry_session:
+      extended_hours: false             # No extended hours for index futures
+      description: "Standard hours even on expiry day"
     
   # Market holidays for 2025 (major ones)
   market_holidays:
@@ -64,14 +207,37 @@ transaction_costs:
     stamp_duty_bps: 0.3         # Lower stamp duty for intraday
     gst_pct: 18.0
     
-  # Futures trading
-  futures:
-    brokerage_bps: 2.0          # 0.02% or ₹20 per order (whichever lower)
+  # Index Futures trading (enhanced)
+  index_futures:
+    brokerage_flat: 20.0        # ₹20 per lot (most discount brokers)
+    brokerage_percentage_cap: 0.05  # Max 0.05% of turnover
     stt_bps: 1.25               # 0.0125% on sell side only
-    exchange_charges_bps: 1.73   # Higher for F&O segment
-    sebi_charges_bps: 0.2
-    stamp_duty_bps: 0.2         # Lower for derivatives
-    gst_pct: 18.0
+    exchange_charges_bps: 1.73   # NSE F&O charges
+    clearing_charges_bps: 0.05   # NSE clearing charges
+    sebi_charges_bps: 0.0002     # SEBI charges (₹10 per crore)
+    stamp_duty_bps: 0.002        # Stamp duty (₹200 per crore)
+    gst_pct: 18.0               # GST on brokerage and other charges
+    
+    # Index-specific cost variations    
+    cost_by_index:
+      NIFTY:
+        min_brokerage_per_lot: 15.0
+        impact_cost_bps: 0.5     # Typical impact cost
+      BANKNIFTY:
+        min_brokerage_per_lot: 15.0  
+        impact_cost_bps: 0.8     # Higher due to volatility
+      FINNIFTY:
+        min_brokerage_per_lot: 20.0
+        impact_cost_bps: 1.0
+      MIDCPNIFTY:
+        min_brokerage_per_lot: 25.0
+        impact_cost_bps: 1.5     # Higher impact cost
+      CNXPHARMA:
+        min_brokerage_per_lot: 30.0
+        impact_cost_bps: 2.0
+      CNXIT:
+        min_brokerage_per_lot: 25.0
+        impact_cost_bps: 1.2
     
   # Options trading
   options:
@@ -82,21 +248,65 @@ transaction_costs:
     stamp_duty_bps: 0.3
     gst_pct: 18.0
 
-# Risk management parameters
+# Risk management parameters for Index Futures
 risk_parameters:
-  # Position and exposure limits
-  position_limits:
-    max_single_position_pct: 5.0      # Max 5% of total capital per position
-    max_sector_exposure_pct: 20.0     # Max 20% exposure to any single sector
-    max_portfolio_leverage: 3.0       # Maximum portfolio leverage allowed
-    max_correlation_exposure: 0.7     # Max combined exposure to correlated positions
+  # Index Futures Position Limits
+  index_futures_position_limits:
+    max_single_index_exposure_pct: 10.0     # Max 10% capital in one index
+    max_total_futures_leverage: 5.0         # Max 5x leverage across all futures
+    max_notional_exposure_cr: 50.0          # Max ₹50 cr notional per index
+    max_correlation_exposure: 0.6           # Reduce for correlated indices
     
-  # Margin and capital requirements
+    # Per-index position limits (based on liquidity)
+    position_limits_by_tier:
+      tier_1_ultra_liquid:                  # NIFTY, BANKNIFTY
+        max_lots_per_position: 500
+        max_capital_pct: 8.0
+      tier_2_liquid:                        # FINNIFTY, MIDCPNIFTY  
+        max_lots_per_position: 200
+        max_capital_pct: 5.0
+      tier_3_medium:                        # CNXPHARMA, CNXIT
+        max_lots_per_position: 100
+        max_capital_pct: 3.0
+    
+  # Index Futures Margin Management
   margin_requirements:
-    initial_margin_buffer_pct: 25.0   # Keep 25% extra margin as buffer
-    mark_to_market_frequency: "real_time"
-    margin_call_threshold_pct: 80.0   # Trigger margin call at 80% utilization
-    forced_liquidation_threshold_pct: 95.0  # Force liquidate at 95% utilization
+    # SPAN + Exposure margin calculations
+    span_margin_buffer_pct: 20.0           # 20% buffer over SPAN margin
+    exposure_margin_buffer_pct: 15.0       # 15% buffer over exposure margin
+    total_margin_buffer_pct: 25.0          # 25% total margin buffer
+    
+    # Real-time margin monitoring
+    mark_to_market_frequency: "real_time"  # Continuous MTM
+    margin_call_threshold_pct: 75.0        # Call at 75% margin utilization
+    forced_liquidation_threshold_pct: 90.0 # Force square-off at 90%
+    
+    # Index-specific margin requirements
+    margin_by_index:
+      NIFTY:
+        span_margin_typical_pct: 8.0       # Typical SPAN margin
+        exposure_margin_pct: 3.0           # Exposure margin
+        extreme_loss_margin_pct: 1.5       # ELM component
+      BANKNIFTY:
+        span_margin_typical_pct: 10.0      # Higher due to volatility
+        exposure_margin_pct: 4.0
+        extreme_loss_margin_pct: 2.0
+      FINNIFTY:
+        span_margin_typical_pct: 9.0
+        exposure_margin_pct: 3.5
+        extreme_loss_margin_pct: 1.8
+      MIDCPNIFTY:
+        span_margin_typical_pct: 12.0      # Higher for midcap volatility
+        exposure_margin_pct: 5.0
+        extreme_loss_margin_pct: 2.5
+      CNXPHARMA:
+        span_margin_typical_pct: 15.0      # Sector-specific volatility
+        exposure_margin_pct: 6.0
+        extreme_loss_margin_pct: 3.0
+      CNXIT:
+        span_margin_typical_pct: 11.0
+        exposure_margin_pct: 4.5
+        extreme_loss_margin_pct: 2.2
     
   # Drawdown and stop-loss limits
   drawdown_limits:
