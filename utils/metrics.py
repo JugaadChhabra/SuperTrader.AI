@@ -77,3 +77,16 @@ def turnover(positions):
         return np.nan
     
     return total_changes/avg_position
+
+def hit_rate(trades_list):
+    trades_series=pd.Series(trades_list).dropna()
+    if trades_series.empty:
+        return np.nan
+        
+    winning_trades=(trades_series>0).sum()
+    total_trades=trades_series.count()
+    
+    return (winning_trades/total_trades)*100
+
+
+
