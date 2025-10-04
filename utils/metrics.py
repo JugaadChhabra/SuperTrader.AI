@@ -88,5 +88,14 @@ def hit_rate(trades_list):
     
     return (winning_trades/total_trades)*100
 
-
-
+def profit_factor(trades_list):
+    trades_series=pd.Series(trades_list).dropna()
+    if trades_series.empty:
+        return np.nan
+        
+    gross_profit=trades_series[trades_series>0].sum()
+    gross_loss=trades_series[trades_series<0].sum()
+    if gross_loss==0:
+        return np.nan
+        
+    return gross_profit/abs(gross_loss)
