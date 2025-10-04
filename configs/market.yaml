@@ -1,12 +1,11 @@
-# SuperTrader.AI Market Configuration - Index Futures Focus
-# Contains NSE Index Futures specifications, trading sessions, costs, and risk parameters
-# Version: 2.0 | Last Updated: 2025-10-03 | Focus: Index Futures Trading
+# SuperTrader.AI Market Configuration - NSE Index Futures
+# Core configuration for index futures trading system
+# Version: 2.1 | Last Updated: 2025-10-04 | Focus: Index Futures Only
 
 metadata:
-  version: "2.0"
-  last_updated: "2025-10-03"
-  description: "NSE Index Futures market configuration for SuperTrader.AI"
-  maintainer: "SuperTrader.AI Team"
+  version: "2.1"
+  last_updated: "2025-10-04"
+  description: "NSE Index Futures configuration for SuperTrader.AI"
   focus: "Index Futures Trading System"
 
 # NSE Index Futures Universe - Liquid Contracts Only
@@ -141,73 +140,30 @@ contract_specifications:
     settlement_time: "15:30:00"
     final_settlement_day: "expiry_day"
 
-# Trading session timings for NSE Index Futures
+# NSE Index Futures Trading Sessions
 market_sessions:
   nse_derivatives:
     pre_open:
       start: "09:00:00"
       end: "09:15:00"
-      description: "Price discovery session - order matching for index futures"
-    
     regular_trading:
       start: "09:15:00" 
       end: "15:30:00"
-      description: "Main trading session for index futures and options"
-    
-    post_close:
-      start: "15:40:00"
-      end: "16:00:00"  
-      description: "Closing price calculation period"
-    
     timezone: "Asia/Kolkata"
     
-  # Special sessions
-  special_sessions:
-    muhurat_trading:
-      duration_minutes: 60
-      description: "Diwali special session"
-    
-    pre_expiry_session:
-      extended_hours: false             # No extended hours for index futures
-      description: "Standard hours even on expiry day"
-    
-  # Market holidays for 2025 (major ones)
+  # Market holidays for 2025
   market_holidays:
     - "2025-01-26"  # Republic Day
     - "2025-03-14"  # Holi
-    - "2025-04-14"  # Ambedkar Jayanti  
     - "2025-04-18"  # Good Friday
-    - "2025-05-01"  # May Day
     - "2025-08-15"  # Independence Day
-    - "2025-08-16"  # Parsi New Year
     - "2025-10-02"  # Gandhi Jayanti
-    - "2025-10-24"  # Dussehra
-    - "2025-11-01"  # Diwali Balipratipada
     - "2025-11-14"  # Diwali
-    - "2025-11-15"  # Govardhan Puja
     - "2025-12-25"  # Christmas
 
-# Transaction cost structure (in basis points)
+# Transaction cost structure for Index Futures
 transaction_costs:
-  # Equity delivery trading
-  equity_delivery:
-    brokerage_bps: 0.0          # Most discount brokers offer free delivery
-    stt_bps: 10.0               # 0.1% on sell side only (buy side = 0)
-    exchange_charges_bps: 0.345  # NSE transaction charges
-    sebi_charges_bps: 0.2       # SEBI turnover fee
-    stamp_duty_bps: 1.5         # State stamp duty (varies by state)
-    gst_pct: 18.0               # GST on brokerage and other charges
-    
-  # Equity intraday trading  
-  equity_intraday:
-    brokerage_bps: 3.0          # 0.03% or ₹20 per order (whichever lower)
-    stt_bps: 2.5                # 0.025% on sell side only
-    exchange_charges_bps: 0.345
-    sebi_charges_bps: 0.2
-    stamp_duty_bps: 0.3         # Lower stamp duty for intraday
-    gst_pct: 18.0
-    
-  # Index Futures trading (enhanced)
+  # Index Futures trading
   index_futures:
     brokerage_flat: 20.0        # ₹20 per lot (most discount brokers)
     brokerage_percentage_cap: 0.05  # Max 0.05% of turnover
@@ -238,15 +194,7 @@ transaction_costs:
       CNXIT:
         min_brokerage_per_lot: 25.0
         impact_cost_bps: 1.2
-    
-  # Options trading
-  options:
-    brokerage_flat: 20.0        # Flat ₹20 per lot for most brokers
-    stt_bps: 5.0                # 0.05% on premium on sell side
-    exchange_charges_bps: 5.3    # Higher for options
-    sebi_charges_bps: 0.2
-    stamp_duty_bps: 0.3
-    gst_pct: 18.0
+
 
 # Risk management parameters for Index Futures
 risk_parameters:
@@ -320,213 +268,43 @@ risk_parameters:
     vix_trading_threshold: 35.0       # Stop aggressive strategies when VIX > 35
     min_liquidity_volume_cr: 50.0     # Minimum ₹50 cr daily volume to trade
 
-# Data quality thresholds and validation rules
+# Data quality thresholds for futures validation
 data_quality:
-  # Volume and liquidity requirements
-  liquidity_requirements:
-    min_daily_volume_cr: 50.0         # Minimum ₹50 crores daily volume
-    min_monthly_volume_cr: 1000.0     # Minimum ₹1000 crores monthly volume
-    max_bid_ask_spread_bps: 10.0      # Maximum 0.1% bid-ask spread
-    min_trade_frequency: 100          # Minimum 100 trades per day
-    
-  # Data completeness and accuracy
-  data_completeness:
+  # Futures data completeness requirements
+  futures_data_completeness:
     min_market_hours_coverage_pct: 95.0  # 95% data availability required
-    max_missing_bars_per_day: 20      # Max 20 missing 1-minute bars per day
-    max_price_gap_pct: 5.0            # Flag price gaps > 5%
-    max_volume_spike_multiple: 10.0   # Flag volume spikes > 10x average
+    max_missing_bars_per_day: 20        # Max 20 missing 1-minute bars per day
+    max_price_gap_pct: 5.0              # Flag price gaps > 5%
+    max_volume_spike_multiple: 10.0     # Flag volume spikes > 10x average
     
-  # Price validation rules
-  price_validation:
-    min_tick_compliance_pct: 99.0     # 99% of prices must comply with tick size
-    max_ohlc_inconsistency_pct: 0.1   # Max 0.1% OHLC logical errors
-    circuit_limit_buffer_pct: 2.0     # Stay 2% away from circuit limits
+  # Futures price validation rules
+  futures_price_validation:
+    min_tick_compliance_pct: 99.0       # 99% of prices must comply with tick size
+    max_ohlc_inconsistency_pct: 0.1     # Max 0.1% OHLC logical errors
+    max_basis_deviation_pct: 2.0        # Max 2% basis deviation from fair value
 
-# Symbol mapping for different data providers
-symbol_mapping:
-  # Yahoo Finance symbol format
-  yahoo_finance:
-    suffix: ".NS"                     # NSE stocks end with .NS
-    prefix: ""
-    
-  # Alpha Vantage symbol format  
-  alpha_vantage:
-    suffix: ".BSE"                    # Often uses BSE format
-    prefix: ""
-    
-  # ICICI Direct symbol format
-  icici_direct:
-    prefix: "NSE:"                    # NSE: prefix for stocks
-    suffix: ""
-    
-  # Internal standardized format
-  internal:
-    prefix: ""                        # Clean symbol names
-    suffix: ""
+# Point value mapping for P&L calculations
+point_value_mapping:
+  NIFTY: 50.0       # ₹50 per index point
+  BANKNIFTY: 15.0   # ₹15 per index point  
+  FINNIFTY: 25.0    # ₹25 per index point
+  MIDCPNIFTY: 75.0  # ₹75 per index point
+  CNXPHARMA: 30.0   # ₹30 per index point
+  CNXIT: 50.0       # ₹50 per index point
 
-# Slippage and market impact models
+# Slippage model for index futures
 slippage_model:
-  # Fixed slippage by position size
-  fixed_slippage:
-    small_position_bps: 1.0           # < ₹1 lakh position
-    medium_position_bps: 2.0          # ₹1-10 lakh position  
-    large_position_bps: 5.0           # > ₹10 lakh position
-    
-  # Dynamic slippage based on market conditions
-  dynamic_slippage:
-    base_slippage_bps: 2.0
-    volatility_multiplier: 1.5        # Increase slippage during high vol
-    volume_impact_factor: 0.1         # Impact based on volume participation
-    
-  # Time-based slippage (market open/close effects)
-  time_based_slippage:
-    market_open_multiplier: 2.0       # 2x slippage in first 30 minutes
-    market_close_multiplier: 1.5      # 1.5x slippage in last 30 minutes
-    lunch_time_multiplier: 1.2        # 1.2x during low volume periods
-
-# Dynamic Universe Selection (expandable beyond fixed lists)
-universe_selection:
-  # Multi-tier liquidity approach instead of fixed top-50
-  liquidity_tiers:
-    tier_1_ultra_liquid:
-      min_daily_volume_cr: 200.0      # Ultra liquid stocks
-      max_position_size_pct: 5.0      # Higher position limits
-      min_market_cap_cr: 50000.0      # Large cap only
-      
-    tier_2_liquid:  
-      min_daily_volume_cr: 80.0       # High liquid stocks
-      max_position_size_pct: 3.0
-      min_market_cap_cr: 20000.0
-      
-    tier_3_medium_liquid:
-      min_daily_volume_cr: 30.0       # Medium liquid stocks  
-      max_position_size_pct: 2.0
-      min_market_cap_cr: 8000.0
-      
-    tier_4_emerging:
-      min_daily_volume_cr: 15.0       # Emerging opportunities
-      max_position_size_pct: 1.0
-      min_market_cap_cr: 3000.0
-      
-  # Strategy-specific universe filters
-  strategy_universes:
-    momentum_strategy:
-      sectors: ["IT", "Pharma", "Auto", "Consumer"]
-      min_roc_3m_pct: 10.0           # 10% momentum in 3 months
-      min_volume_surge: 1.5          # 1.5x average volume
-      exclude_high_beta: 2.5         # Exclude beta > 2.5
-      
-    mean_reversion_strategy:
-      sectors: ["Banking", "FMCG", "Utilities"]
-      rsi_range: [25, 75]            # RSI oversold/overbought zones
-      stable_fundamentals: true
-      min_dividend_yield_pct: 1.0
-      
-    breakout_strategy:
-      include_mid_cap: true
-      price_near_52w_high_pct: 90.0  # Within 10% of 52-week high
-      volume_breakout_factor: 2.0    # 2x volume on breakout
-      consolidation_period_days: 20  # After 20-day consolidation
-      
-  # Base eligibility criteria (applies to all tiers)
-  base_criteria:
-    # Listing and regulatory
-    min_listing_years: 2             # Reduced from 3 for more opportunities
-    exclude_penny_stocks_below: 10.0 # Reduced from ₹20 for mid-cap inclusion
-    exclude_t2t_stocks: true
-    exclude_gsm_stocks: true         # Graded Surveillance Measure
-    
-    # F&O availability (optional, not mandatory)
-    fo_preferred: true               # Prefer F&O stocks but don't mandate
-    min_oi_cr: 50.0                 # Reduced F&O requirement
-    
-    # Financial health (relaxed for broader universe)
-    min_quarterly_revenue_cr: 500.0  # Reduced from 1000 for mid-cap inclusion
-    positive_book_value: true
-    max_debt_to_equity: 2.0         # Allow higher leverage for growth stocks
-    
-  # Dynamic screening (updated daily)
-  dynamic_filters:
-    # Technical health
-    technical_health:
-      max_bid_ask_spread_bps: 20.0   # Relaxed for mid-cap stocks
-      min_trades_per_day: 25         # Reduced minimum trades
-      price_impact_threshold: 0.5    # Max 0.5% price impact per ₹1cr trade
-      
-    # Fundamental momentum  
-    fundamental_momentum:
-      earnings_revision_trend: "positive"  # Analyst upgrades preferred
-      sales_growth_yoy_pct: 5.0           # Minimum 5% sales growth
-      exclude_loss_making: false          # Allow loss-making growth stocks
-      
-    # Market microstructure
-    microstructure_quality:
-      delivery_percentage_min: 20.0       # Min 20% delivery trading
-      institutional_holding_min_pct: 5.0  # Min institutional interest
-      free_float_turnover_max: 100.0      # Avoid excessive speculation
-      
-  # Sector allocation limits (prevent over-concentration)
-  sector_limits:
-    banking_max_pct: 25.0
-    it_max_pct: 20.0
-    auto_max_pct: 15.0
-    pharma_max_pct: 15.0
-    fmcg_max_pct: 10.0
-    metals_max_pct: 10.0
-    oil_gas_max_pct: 10.0
-    others_max_pct: 15.0
-
-# Performance benchmarks and targets
-performance_targets:
-  # Risk-adjusted return targets
-  return_targets:
-    min_annual_sharpe: 1.5            # Minimum 1.5 Sharpe ratio
-    min_annual_sortino: 2.0           # Minimum 2.0 Sortino ratio
-    target_calmar_ratio: 1.0          # Target 1.0 Calmar ratio
-    
-  # Risk management targets
-  risk_targets:
-    max_var_95_daily_pct: 2.0         # Max 2% daily VaR (95% confidence)
-    target_hit_ratio_pct: 55.0        # Target 55% winning trades
-    max_avg_loss_multiple: 1.5        # Max loss should be 1.5x avg profit
-
-# System operational parameters
-operational_params:
-  # Order management
-  order_management:
-    max_order_value_cr: 10.0          # Max ₹10 cr per single order
-    order_timeout_seconds: 30         # Cancel orders after 30 seconds
-    max_pending_orders: 50            # Max 50 pending orders at once
-    
-  # System health monitoring
-  system_monitoring:
-    heartbeat_interval_seconds: 5     # System heartbeat every 5 seconds
-    max_latency_ms: 100               # Max 100ms latency tolerance
-    circuit_breaker_threshold: 3      # Circuit break after 3 system errors
-    
-  # Logging and audit
-  audit_settings:
-    log_all_orders: true              # Log every order placed
-    log_all_fills: true               # Log every fill received
-    retain_logs_days: 90              # Retain logs for 90 days
-
-# Implementation Notes:
-# 1. Universe is dynamically screened daily based on above criteria
-# 2. Stocks are categorized into liquidity tiers with different position limits
-# 3. Strategy-specific universes allow different approaches to target different opportunities
-# 4. Base criteria ensure minimum quality while allowing broader opportunity set
-# 5. Dynamic filters adapt to changing market conditions
-#
-# Sample implementation in agents/data_agent.py:
-# def select_tradeable_universe(strategy_type, date):
-#     all_stocks = screen_by_base_criteria(date)
-#     tier_qualified = apply_liquidity_tiers(all_stocks, date)  
-#     strategy_filtered = apply_strategy_filters(tier_qualified, strategy_type, date)
-#     return strategy_filtered
-#
-# This approach allows:
-# - Expansion beyond arbitrary "top 50" limit
-# - Strategy-specific opportunity targeting  
-# - Dynamic adaptation to market conditions
-# - Risk-appropriate position sizing by liquidity tier
-# - Sector rotation and emerging opportunity capture
+  # Index-specific slippage (in basis points)
+  index_slippage:
+    NIFTY: 0.5        # Ultra liquid - minimal slippage
+    BANKNIFTY: 0.8    # High volatility - higher slippage
+    FINNIFTY: 1.0     # Medium liquidity
+    MIDCPNIFTY: 1.5   # Midcap volatility
+    CNXPHARMA: 2.0    # Sector specific - higher slippage
+    CNXIT: 1.2        # IT sector volatility
+  
+  # Time-based multipliers
+  time_multipliers:
+    market_open: 2.0    # First 30 minutes
+    market_close: 1.5   # Last 30 minutes
+    normal_hours: 1.0   # Regular trading hours
