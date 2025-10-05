@@ -1,310 +1,159 @@
-# SuperTrader.AI Market Configuration - NSE Index Futures
-# Core configuration for index futures trading system
-# Version: 2.1 | Last Updated: 2025-10-04 | Focus: Index Futures Only
-
 metadata:
-  version: "2.1"
-  last_updated: "2025-10-04"
-  description: "NSE Index Futures configuration for SuperTrader.AI"
-  focus: "Index Futures Trading System"
+  version: "3.0"
+  last_updated: "2025-10-05"
+  description: "NSE Index Futures market specifications"
+  focus: "Core Market Data Only"
 
-# NSE Index Futures Universe - Liquid Contracts Only
+# NSE Index Futures Universe - Static Market Specifications
+# Global specifications (apply to all index futures)
+global_futures_specs:
+  tick_size: 0.05                    # All index futures have ₹0.05 tick
+  min_price_movement: 0.05           # Minimum price change
+  settlement_type: "cash_settled"    # All index futures are cash settled
+  multiplier: 1                      # Point value multiplier
+  contract_type: "index_futures"
+  
 index_futures:
-  # Tier 1: Ultra High Liquidity (Primary Focus)
-  tier_1_ultra_liquid:
-    NIFTY:
-      symbol: "NIFTY"
-      description: "Nifty 50 Index Futures"
-      lot_size: 50
-      tick_size: 0.05
-      point_value_inr: 50.0              # ₹50 per index point
-      margin_nrml_pct: 10.0              # ~10% SPAN margin
-      margin_mis_pct: 5.0                # ~5% MIS margin
-      avg_daily_volume_lots: 500000      # ~5 lakh lots daily
-      avg_daily_oi_lots: 2000000         # ~20 lakh lots OI
-      contract_months: ["current", "next", "far"]
-      rollover_day: "last_thursday"
-      trading_hours: "09:15-15:30"
-      settlement: "cash_settled"
-      underlying: "NIFTY_50_INDEX"
+  NIFTY:
+    symbol: "NIFTY"
+    description: "Nifty 50 Index Futures"
+    lot_size: 50
+    point_value_inr: 50.0
+    underlying: "NIFTY_50_INDEX"
       
-    BANKNIFTY:
-      symbol: "BANKNIFTY"
-      description: "Bank Nifty Index Futures" 
-      lot_size: 15
-      tick_size: 0.05
-      point_value_inr: 15.0              # ₹15 per index point
-      margin_nrml_pct: 12.0              # Higher margin due to volatility
-      margin_mis_pct: 6.0
-      avg_daily_volume_lots: 300000      # ~3 lakh lots daily
-      avg_daily_oi_lots: 1000000         # ~10 lakh lots OI
-      contract_months: ["current", "next", "far"]
-      rollover_day: "last_thursday"
-      trading_hours: "09:15-15:30"
-      settlement: "cash_settled"
-      underlying: "BANK_NIFTY_INDEX"
+  BANKNIFTY:
+    symbol: "BANKNIFTY"
+    description: "Bank Nifty Index Futures"
+    lot_size: 25
+    point_value_inr: 25.0
+    underlying: "BANK_NIFTY_INDEX"
 
-  # Tier 2: High Liquidity (Secondary Focus)  
-  tier_2_liquid:
-    FINNIFTY:
-      symbol: "FINNIFTY"
-      description: "Financial Services Index Futures"
-      lot_size: 25
-      tick_size: 0.05
-      point_value_inr: 25.0
-      margin_nrml_pct: 11.0
-      margin_mis_pct: 5.5
-      avg_daily_volume_lots: 100000      # ~1 lakh lots daily
-      avg_daily_oi_lots: 400000          # ~4 lakh lots OI
-      contract_months: ["current", "next", "far"]
-      rollover_day: "last_thursday"
-      trading_hours: "09:15-15:30"
-      settlement: "cash_settled"
-      underlying: "NIFTY_FIN_SERVICES_INDEX"
+  FINNIFTY:
+    symbol: "FINNIFTY"
+    description: "Financial Services Index Futures"
+    lot_size: 40
+    point_value_inr: 40.0
+    underlying: "NIFTY_FIN_SERVICES_INDEX"
       
-    MIDCPNIFTY:
-      symbol: "MIDCPNIFTY"
-      description: "Nifty Midcap Select Index Futures"
-      lot_size: 75
-      tick_size: 0.05
-      point_value_inr: 75.0
-      margin_nrml_pct: 13.0              # Higher margin for midcap volatility
-      margin_mis_pct: 6.5
-      avg_daily_volume_lots: 50000       # ~50k lots daily
-      avg_daily_oi_lots: 200000          # ~2 lakh lots OI
-      contract_months: ["current", "next", "far"]
-      rollover_day: "last_thursday"
-      trading_hours: "09:15-15:30"
-      settlement: "cash_settled"
-      underlying: "NIFTY_MIDCAP_SELECT_INDEX"
+  MIDCPNIFTY:
+    symbol: "MIDCPNIFTY"
+    description: "Nifty Midcap Select Index Futures"
+    lot_size: 50
+    point_value_inr: 50.0
+    underlying: "NIFTY_MIDCAP_SELECT_INDEX"
 
-  # Tier 3: Medium Liquidity (Opportunistic)
-  tier_3_medium:
-    CNXPHARMA:
-      symbol: "CNXPHARMA"
-      description: "CNX Pharma Index Futures"
-      lot_size: 30
-      tick_size: 0.05
-      point_value_inr: 30.0
-      margin_nrml_pct: 14.0
-      margin_mis_pct: 7.0
-      avg_daily_volume_lots: 25000       # ~25k lots daily
-      avg_daily_oi_lots: 100000          # ~1 lakh lots OI
-      contract_months: ["current", "next"]
-      rollover_day: "last_thursday"
-      trading_hours: "09:15-15:30"
-      settlement: "cash_settled"
-      underlying: "CNX_PHARMA_INDEX"
+  CNXPHARMA:
+    symbol: "CNXPHARMA"
+    description: "CNX Pharma Index Futures"
+    lot_size: 30
+    point_value_inr: 30.0
+    underlying: "CNX_PHARMA_INDEX"
       
-    CNXIT:
-      symbol: "CNXIT"
-      description: "CNX IT Index Futures"
-      lot_size: 50
-      tick_size: 0.05
-      point_value_inr: 50.0
-      margin_nrml_pct: 12.0
-      margin_mis_pct: 6.0
-      avg_daily_volume_lots: 40000       # ~40k lots daily
-      avg_daily_oi_lots: 150000          # ~1.5 lakh lots OI
-      contract_months: ["current", "next"]
-      rollover_day: "last_thursday"
-      trading_hours: "09:15-15:30"
-      settlement: "cash_settled"
-      underlying: "CNX_IT_INDEX"
+  CNXIT:
+    symbol: "CNXIT"
+    description: "CNX IT Index Futures"
+    lot_size: 50
+    point_value_inr: 50.0
+    underlying: "CNX_IT_INDEX"
 
-# Contract specifications and rollover mechanics
-contract_specifications:
-  # Monthly contract cycle
-  contract_cycle:
-    current_month: "Near month contract - highest liquidity"
-    next_month: "Second month contract - medium liquidity"  
-    far_month: "Third month contract - lower liquidity"
-    
-  # Rollover specifications
-  rollover_mechanics:
-    rollover_date: "last_thursday_of_expiry_month"
-    rollover_time: "15:30:00"
-    notice_period_days: 5               # Start monitoring 5 days before
-    auto_rollover_threshold_days: 2     # Auto-rollover 2 days before expiry
-    rollover_spread_monitoring: true    # Monitor calendar spreads
-    
-  # Contract naming convention
-  naming_convention:
-    format: "{INDEX}{YYYY}{MM}{DD}"     # e.g., NIFTY20241226
-    weekly_format: "{INDEX}{YY}{MMM}{W}{DD}"  # e.g., NIFTY24DEC1W26
-    
-  # Settlement specifications  
-  settlement:
-    settlement_type: "cash_settlement"
-    settlement_price_method: "last_half_hour_vwap"  # VWAP of last 30 minutes
-    settlement_time: "15:30:00"
-    final_settlement_day: "expiry_day"
-
-# NSE Index Futures Trading Sessions
+# Core Market Sessions and Schedule
 market_sessions:
   nse_derivatives:
-    pre_open:
-      start: "09:00:00"
-      end: "09:15:00"
-    regular_trading:
-      start: "09:15:00" 
-      end: "15:30:00"
+    pre_open: "09:00-09:15"
+    regular_trading: "09:15-15:30"
     timezone: "Asia/Kolkata"
     
-  # Market holidays for 2025
-  market_holidays:
-    - "2025-01-26"  # Republic Day
-    - "2025-03-14"  # Holi
-    - "2025-04-18"  # Good Friday
-    - "2025-08-15"  # Independence Day
-    - "2025-10-02"  # Gandhi Jayanti
-    - "2025-11-14"  # Diwali
-    - "2025-12-25"  # Christmas
+  # Trading calendar
+  trading_schedule:
+    trading_days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+    weekend_closed: ["Saturday", "Sunday"]
+    currency: "INR"                    # All NSE futures in INR
+    
+  # Fixed Date Market Holidays (Annual)
+  fixed_holidays:
+    "01-26": "Republic Day"
+    "08-15": "Independence Day" 
+    "10-02": "Gandhi Jayanti"
+    "12-25": "Christmas"
+    
+  # Variable Date Holidays (dates change yearly - examples for 2025)
+  variable_holidays_2025:
+    "03-14": "Holi"
+    "04-18": "Good Friday"
+    "04-21": "Ram Navami" 
+    "05-01": "Maharashtra Day"
+    "08-19": "Raksha Bandhan"
+    "09-07": "Ganesh Chaturthi"
+    "10-12": "Dussehra"
+    "11-01": "Diwali (Laxmi Puja)"
+    "11-02": "Diwali (Balipratipada)"
+    "11-15": "Guru Nanak Jayanti"
+    
+  # Special trading sessions
+  special_sessions:
+    muhurat_trading: "Diwali evening 18:00-19:00"  # Special 1-hour session
 
-# Transaction cost structure for Index Futures
-transaction_costs:
-  # Index Futures trading
-  index_futures:
-    brokerage_flat: 20.0        # ₹20 per lot (most discount brokers)
-    brokerage_percentage_cap: 0.05  # Max 0.05% of turnover
-    stt_bps: 1.25               # 0.0125% on sell side only
-    exchange_charges_bps: 1.73   # NSE F&O charges
-    clearing_charges_bps: 0.05   # NSE clearing charges
-    sebi_charges_bps: 0.0002     # SEBI charges (₹10 per crore)
-    stamp_duty_bps: 0.002        # Stamp duty (₹200 per crore)
-    gst_pct: 18.0               # GST on brokerage and other charges
-    
-    # Index-specific cost variations    
-    cost_by_index:
-      NIFTY:
-        min_brokerage_per_lot: 15.0
-        impact_cost_bps: 0.5     # Typical impact cost
-      BANKNIFTY:
-        min_brokerage_per_lot: 15.0  
-        impact_cost_bps: 0.8     # Higher due to volatility
-      FINNIFTY:
-        min_brokerage_per_lot: 20.0
-        impact_cost_bps: 1.0
-      MIDCPNIFTY:
-        min_brokerage_per_lot: 25.0
-        impact_cost_bps: 1.5     # Higher impact cost
-      CNXPHARMA:
-        min_brokerage_per_lot: 30.0
-        impact_cost_bps: 2.0
-      CNXIT:
-        min_brokerage_per_lot: 25.0
-        impact_cost_bps: 1.2
-
-
-# Risk management parameters for Index Futures
-risk_parameters:
-  # Index Futures Position Limits
-  index_futures_position_limits:
-    max_single_index_exposure_pct: 10.0     # Max 10% capital in one index
-    max_total_futures_leverage: 5.0         # Max 5x leverage across all futures
-    max_notional_exposure_cr: 50.0          # Max ₹50 cr notional per index
-    max_correlation_exposure: 0.6           # Reduce for correlated indices
-    
-    # Per-index position limits (based on liquidity)
-    position_limits_by_tier:
-      tier_1_ultra_liquid:                  # NIFTY, BANKNIFTY
-        max_lots_per_position: 500
-        max_capital_pct: 8.0
-      tier_2_liquid:                        # FINNIFTY, MIDCPNIFTY  
-        max_lots_per_position: 200
-        max_capital_pct: 5.0
-      tier_3_medium:                        # CNXPHARMA, CNXIT
-        max_lots_per_position: 100
-        max_capital_pct: 3.0
-    
-  # Index Futures Margin Management
-  margin_requirements:
-    # SPAN + Exposure margin calculations
-    span_margin_buffer_pct: 20.0           # 20% buffer over SPAN margin
-    exposure_margin_buffer_pct: 15.0       # 15% buffer over exposure margin
-    total_margin_buffer_pct: 25.0          # 25% total margin buffer
-    
-    # Real-time margin monitoring
-    mark_to_market_frequency: "real_time"  # Continuous MTM
-    margin_call_threshold_pct: 75.0        # Call at 75% margin utilization
-    forced_liquidation_threshold_pct: 90.0 # Force square-off at 90%
-    
-    # Index-specific margin requirements
-    margin_by_index:
-      NIFTY:
-        span_margin_typical_pct: 8.0       # Typical SPAN margin
-        exposure_margin_pct: 3.0           # Exposure margin
-        extreme_loss_margin_pct: 1.5       # ELM component
-      BANKNIFTY:
-        span_margin_typical_pct: 10.0      # Higher due to volatility
-        exposure_margin_pct: 4.0
-        extreme_loss_margin_pct: 2.0
-      FINNIFTY:
-        span_margin_typical_pct: 9.0
-        exposure_margin_pct: 3.5
-        extreme_loss_margin_pct: 1.8
-      MIDCPNIFTY:
-        span_margin_typical_pct: 12.0      # Higher for midcap volatility
-        exposure_margin_pct: 5.0
-        extreme_loss_margin_pct: 2.5
-      CNXPHARMA:
-        span_margin_typical_pct: 15.0      # Sector-specific volatility
-        exposure_margin_pct: 6.0
-        extreme_loss_margin_pct: 3.0
-      CNXIT:
-        span_margin_typical_pct: 11.0
-        exposure_margin_pct: 4.5
-        extreme_loss_margin_pct: 2.2
-    
-  # Drawdown and stop-loss limits
-  drawdown_limits:
-    max_daily_drawdown_pct: 3.0       # Stop trading if daily DD > 3%
-    max_portfolio_drawdown_pct: 15.0  # System shutdown if portfolio DD > 15%
-    consecutive_loss_limit: 5         # Stop after 5 consecutive losing trades
-    
-  # Volatility and market condition limits
-  market_conditions:
-    max_portfolio_volatility: 0.25    # 25% annualized portfolio volatility limit
-    vix_trading_threshold: 35.0       # Stop aggressive strategies when VIX > 35
-    min_liquidity_volume_cr: 50.0     # Minimum ₹50 cr daily volume to trade
-
-# Data quality thresholds for futures validation
-data_quality:
-  # Futures data completeness requirements
-  futures_data_completeness:
-    min_market_hours_coverage_pct: 95.0  # 95% data availability required
-    max_missing_bars_per_day: 20        # Max 20 missing 1-minute bars per day
-    max_price_gap_pct: 5.0              # Flag price gaps > 5%
-    max_volume_spike_multiple: 10.0     # Flag volume spikes > 10x average
-    
-  # Futures price validation rules
-  futures_price_validation:
-    min_tick_compliance_pct: 99.0       # 99% of prices must comply with tick size
-    max_ohlc_inconsistency_pct: 0.1     # Max 0.1% OHLC logical errors
-    max_basis_deviation_pct: 2.0        # Max 2% basis deviation from fair value
-
-# Point value mapping for P&L calculations
-point_value_mapping:
-  NIFTY: 50.0       # ₹50 per index point
-  BANKNIFTY: 15.0   # ₹15 per index point  
-  FINNIFTY: 25.0    # ₹25 per index point
-  MIDCPNIFTY: 75.0  # ₹75 per index point
-  CNXPHARMA: 30.0   # ₹30 per index point
-  CNXIT: 50.0       # ₹50 per index point
-
-# Slippage model for index futures
-slippage_model:
-  # Index-specific slippage (in basis points)
-  index_slippage:
-    NIFTY: 0.5        # Ultra liquid - minimal slippage
-    BANKNIFTY: 0.8    # High volatility - higher slippage
-    FINNIFTY: 1.0     # Medium liquidity
-    MIDCPNIFTY: 1.5   # Midcap volatility
-    CNXPHARMA: 2.0    # Sector specific - higher slippage
-    CNXIT: 1.2        # IT sector volatility
+# Contract Naming Convention (NSE Standard Format)
+contract_naming:
+  monthly_format: "{INDEX}{YY}{MON}FUT"     # e.g., NIFTY25JANFUT
+  monthly_pattern: "^[A-Z]+\\d{2}(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)FUT$"
   
-  # Time-based multipliers
-  time_multipliers:
-    market_open: 2.0    # First 30 minutes
-    market_close: 1.5   # Last 30 minutes
-    normal_hours: 1.0   # Regular trading hours
+  # Month abbreviations used by NSE
+  month_codes:
+    "01": "JAN"
+    "02": "FEB" 
+    "03": "MAR"
+    "04": "APR"
+    "05": "MAY"
+    "06": "JUN"
+    "07": "JUL"
+    "08": "AUG"
+    "09": "SEP"
+    "10": "OCT"
+    "11": "NOV"
+    "12": "DEC"
+
+# Exchange and Trading Rules (Static Information)
+exchange_info:
+  exchange_name: "NSE"
+  exchange_code: "NSE"
+  country: "IN"
+  base_currency: "INR"               # All futures contracts in INR
+  regulatory_authority: "SEBI"
+  
+  # Contract specifications
+  contract_specs:
+    expiry_day: "last_thursday_of_month"
+    expiry_time: "15:30:00"
+    final_settlement_day: "expiry_day"
+    contract_cycle_months: 3          # Current, next, far month
+    min_contract_value: 200000        # ₹2 lakh minimum (approx)
+    
+  # Price and quantity limits
+  price_limits:
+    circuit_breaker_pct: 10.0         # 10% price circuit breaker for indices
+    daily_price_limit_pct: 10.0       # Daily price movement limit
+    
+  quantity_limits:
+    min_order_quantity: 1             # Minimum 1 lot
+    max_order_quantity_lots: 500      # Maximum order size
+    
+# Market Maker Information (Static Specs)
+market_structure:
+  order_types: ["MARKET", "LIMIT", "SL", "SL-M"]
+  validity_types: ["DAY", "IOC", "GTC"]
+  
+# Data Feed Information (Connection Specs) 
+data_feeds:
+  primary_feed: "NSE_FO"
+  backup_feed: "NSE_FO_BACKUP" 
+  feed_protocol: "FIX_4.4"
+  
+  # Symbol mapping for data feeds
+  feed_symbol_format: "{nse_symbol_prefix}{expiry_month_code}"
+  
+# Regulatory Limits (NSE/SEBI Rules)
+regulatory:
+  position_reporting_threshold_cr: 10.0    # Report if position > ₹10 cr
+  large_trade_threshold_cr: 5.0           # Large trade if > ₹5 cr  
+  market_wide_position_limit_pct: 15.0    # Max 15% of total market OI
