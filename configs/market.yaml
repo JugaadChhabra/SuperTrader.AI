@@ -123,7 +123,7 @@ exchange_info:
   
   # Contract specifications
   contract_specs:
-    expiry_day: "last_thursday_of_month"
+    expiry_day: "last_tuesday_of_month"
     expiry_time: "15:30:00"
     final_settlement_day: "expiry_day"
     contract_cycle_months: 3          # Current, next, far month
