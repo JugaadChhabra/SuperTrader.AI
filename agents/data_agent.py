@@ -1,4 +1,3 @@
-import asyncio
 import base64
 import json
 import logging
@@ -26,9 +25,9 @@ def init_data_agent(config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     load_dotenv()
     ctx = {
         "app_key": (config or {}).get("icici", {}).get("app_key")
-        or os.getenv("ICICI_APP_KEY"),
+        or os.getenv("APP_KEY"),
         "api_session_token": (config or {}).get("icici", {}).get("api_session_token")
-        or os.getenv("ICICI_API_SESSION_TOKEN"),
+        or os.getenv("API_SESSION_TOKEN"),
         "initialized_at": datetime.now(timezone.utc).isoformat(),
     }
     logger.info("Data Agent initialized")
@@ -83,26 +82,22 @@ def connect_icici_broker(api_keys: Dict[str, str]) -> Dict[str, str]:
     return {"user_id": user_id, "session_token": session_token, "raw": data}
 
 
-async def _icici_sio_client(
-    *, user_id: str, session_token: str
-) -> socketio.AsyncClient:
-    """Create and configure a socket.io AsyncClient for ICICI live stream."""
-    sio = socketio.AsyncClient(logger=False, engineio_logger=False)
+def _icici_sio_client(*, user_id: str, session_token: str) -> socketio.Client:
+    """Create and configure a socket.io Client for ICICI live stream."""
+    sio = socketio.Client(logger=False, engineio_logger=False)
 
     @sio.event
-    async def connect():  # pragma: no cover - network path
+    def connect():  # pragma: no cover - network path
         logger.info("ICICI WebSocket connected")
 
     @sio.event
-    async def disconnect():  # pragma: no cover - network path
+    def disconnect():  # pragma: no cover - network path
         logger.info("ICICI WebSocket disconnected")
 
     @sio.event
-    async def connect_error(data):  # pragma: no cover - network path
+    def connect_error(data):  # pragma: no cover - network path
         logger.error("ICICI WebSocket connection error: %s", data)
-
-    # Auth payload expected by upstream server
-    sio.auth = {"user": user_id, "token": session_token}
+        
     return sio
 
 
@@ -134,7 +129,7 @@ def parse_icici_payload(data: Any) -> Dict[str, Any]:
         return {"raw_data": data}
 
 
-async def stream_icici_quotes(
+def stream_icici_quotes(
     api_keys: Dict[str, str],
     symbols: Iterable[str],
     *,
@@ -144,11 +139,11 @@ async def stream_icici_quotes(
     """Stream live quotes from ICICI for a fixed duration.
     """
     auth = connect_icici_broker(api_keys)
-    sio = await _icici_sio_client(user_id=auth["user_id"], session_token=auth["session_token"])
+    sio = _icici_sio_client(user_id=auth["user_id"], session_token=auth["session_token"])
 
     # Event handler for ticks
     @sio.on("stock")
-    async def _on_stock_data(data):  # pragma: no cover - network path
+    def _on_stock_data(data):  # pragma: no cover - network path
         parsed = parse_icici_payload(data)
         if on_tick:
             try:
@@ -163,41 +158,47 @@ async def stream_icici_quotes(
             ltq = parsed.get("ltq")
             logger.info("tick | %s | last=%s change=%s ltq=%s", sym, last, chg, ltq)
 
-    # Connect
-    await sio.connect(
-        "https://livestream.icicidirect.com",
-        headers={"User-Agent": "python-socketio[client]/socket"},
-        transports=["websocket"],
-        wait_timeout=10,
-    )
-
-    # Join rooms / subscribe symbols
-    joined: List[str] = []
+    # Connect using the working auth method from the example
+    logger.info("Attempting WebSocket connection with user_id: %s", auth["user_id"][:4] + "***")
+    
     try:
-        for sym in symbols:
-            await sio.emit("join", sym)
-            joined.append(sym)
-            logger.info("subscribed: %s", sym)
+        sio.connect(
+            "https://livestream.icicidirect.com",
+            headers={"User-Agent": "python-socketio[client]/socket"},
+            auth={"user": auth["user_id"], "token": auth["session_token"]},
+            transports=["websocket"],
+            wait_timeout=15,
+        )
 
-        # Sleep for duration
-        logger.info("streaming for %s seconds…", duration_sec)
-        await asyncio.sleep(duration_sec)
-    finally:
-        # Best-effort cleanup
-        for sym in joined:
+        # Join rooms / subscribe symbols
+        joined: List[str] = []
+        try:
+            for sym in symbols:
+                sio.emit("join", sym)
+                joined.append(sym)
+                logger.info("subscribed: %s", sym)
+
+            # Sleep for duration
+            logger.info("streaming for %s seconds…", duration_sec)
+            sio.sleep(duration_sec)
+        finally:
+            # Best-effort cleanup
+            for sym in joined:
+                try:
+                    sio.emit("leave", sym)
+                except Exception:
+                    pass
             try:
-                await sio.emit("leave", sym)
+                sio.emit("disconnect", "transport close")
             except Exception:
                 pass
-        try:
-            await sio.emit("disconnect", "transport close")
-        except Exception:
-            pass
-        try:
-            await sio.disconnect()
-        except Exception:
-            pass
-        logger.info("ICICI stream closed")
+            try:
+                sio.disconnect()
+            except Exception:
+                pass
+            logger.info("ICICI stream closed")
+    except Exception as e:
+        logger.error("WebSocket connection failed: %s", e)
 
 
 
@@ -230,15 +231,21 @@ def demo_run_from_env(duration_sec: int = 15) -> None:
         raise RuntimeError("Missing ICICI_APP_KEY / ICICI_API_SESSION_TOKEN env vars")
 
     symbols = os.getenv("ICICI_DEMO_SYMBOLS", "NSE:SBIN,NSE:RELIANCE").split(",")
-    asyncio.run(stream_icici_quotes(api, symbols, duration_sec=duration_sec, on_tick=_default_on_tick))
+    stream_icici_quotes(api, symbols, duration_sec=duration_sec, on_tick=_default_on_tick)
 
-def get_index_futures_symbols(config_path: str = "configs/market.yaml") -> List[str]:
+def get_index_futures_symbols(config_path: str = "../configs/market.yaml") -> List[str]:
     """Generate ICICI-format symbol list for index futures from market config.
     
     Returns list like: ['NSE:NIFTY25OCTFUT', 'NSE:BANKNIFTY25OCTFUT', ...] (current month only)
     """
     import yaml
     from datetime import datetime
+    import os
+    
+    # Get the directory of this script and construct absolute path
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    if not os.path.isabs(config_path):
+        config_path = os.path.join(script_dir, config_path)
     
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
@@ -259,7 +266,7 @@ def get_index_futures_symbols(config_path: str = "configs/market.yaml") -> List[
     
     return symbols
 
-async def stream_minute_chart(api_keys: Dict[str, str], symbols: List[str]) -> None:
+def stream_minute_chart(api_keys: Dict[str, str], symbols: List[str]) -> None:
     """Stream data every minute for 5 minutes to simulate 1-minute chart.
     
     Args:
@@ -267,6 +274,7 @@ async def stream_minute_chart(api_keys: Dict[str, str], symbols: List[str]) -> N
         symbols: List of futures symbols to track
     """
     from datetime import datetime
+    import time
     
     # Store latest prices for each symbol
     latest_prices = {}
@@ -305,26 +313,29 @@ async def stream_minute_chart(api_keys: Dict[str, str], symbols: List[str]) -> N
     
     # Setup WebSocket connection
     auth = connect_icici_broker(api_keys)
-    sio = await _icici_sio_client(user_id=auth["user_id"], session_token=auth["session_token"])
+    sio = _icici_sio_client(user_id=auth["user_id"], session_token=auth["session_token"])
     
     # Event handler for collecting ticks
     @sio.on("stock")
-    async def _on_stock_data(data):
+    def _on_stock_data(data):
         parsed = parse_icici_payload(data)
         minute_tick_handler(parsed)
     
     try:
-        # Connect to WebSocket
-        await sio.connect(
+        # Connect to WebSocket using the working auth method
+        logger.info("Attempting WebSocket connection with user_id: %s", auth["user_id"][:4] + "***")
+        
+        sio.connect(
             "https://livestream.icicidirect.com",
             headers={"User-Agent": "python-socketio[client]/socket"},
+            auth={"user": auth["user_id"], "token": auth["session_token"]},
             transports=["websocket"],
-            wait_timeout=10,
+            wait_timeout=15,
         )
         
         # Subscribe to all symbols
         for sym in symbols:
-            await sio.emit("join", sym)
+            sio.emit("join", sym)
             logger.info("subscribed: %s", sym)
         
         # Stream for 5 minutes with 1-minute intervals
@@ -332,7 +343,7 @@ async def stream_minute_chart(api_keys: Dict[str, str], symbols: List[str]) -> N
         
         for minute in range(5):
             # Wait 60 seconds to collect data
-            await asyncio.sleep(60)
+            time.sleep(60)
             
             # Print minute summary
             print_minute_summary()
@@ -343,11 +354,11 @@ async def stream_minute_chart(api_keys: Dict[str, str], symbols: List[str]) -> N
         # Cleanup WebSocket
         for sym in symbols:
             try:
-                await sio.emit("leave", sym)
+                sio.emit("leave", sym)
             except Exception:
                 pass
         try:
-            await sio.disconnect()
+            sio.disconnect()
         except Exception:
             pass
         logger.info("WebSocket connection closed")
@@ -361,6 +372,12 @@ def demo_index_futures_stream(duration_sec: int = 30) -> None:
     ctx = init_data_agent()
     api = {"app_key": ctx.get("app_key"), "api_session_token": ctx.get("api_session_token")}
     
+    # Debug: Check what credentials we have
+    logger.info("API Key present: %s", bool(api["app_key"]))
+    logger.info("Session Token present: %s", bool(api["api_session_token"]))
+    if api["app_key"]:
+        logger.info("API Key starts with: %s***", api["app_key"][:8])
+    
     if not api["app_key"] or not api["api_session_token"]:
         raise RuntimeError("Missing ICICI_APP_KEY / ICICI_API_SESSION_TOKEN env vars")
     
@@ -369,7 +386,7 @@ def demo_index_futures_stream(duration_sec: int = 30) -> None:
     logger.info("Starting 1-minute chart simulation for %d contracts: %s", len(futures_symbols), futures_symbols)
     
     # Run the 1-minute interval streaming
-    asyncio.run(stream_minute_chart(api, futures_symbols))
+    stream_minute_chart(api, futures_symbols)
 
 if __name__ == "__main__": 
     # Test 5-minute chart simulation for index futures
@@ -409,7 +426,10 @@ def fetch_index_futures_ohlcv(index_symbols: List[str], contract_months: List[st
     
     # Load market configuration for contract naming
     try:
-        with open('configs/market.yaml', 'r') as f:
+        # Get the directory of this script and construct absolute path
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        config_path = os.path.join(script_dir, '../configs/market.yaml')
+        with open(config_path, 'r') as f:
             market_config = yaml.safe_load(f)
     except FileNotFoundError:
         logger.warning("Market config not found, using default contract naming")

@@ -1,4 +1,5 @@
 socketio
+websocket-client
 requests
 dotenv
 spacy
