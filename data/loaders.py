@@ -3,8 +3,14 @@ Data Warehouse and Preprocessing for SuperTrader.AI
 Handles loading, cleaning, and preprocessing historical OHLCV data from CSV files.
 
 IMPORTANT: This module works with local CSV data warehouse only.
-- For LIVE trading data, use agents/data_agent.py ICICI WebSocket
+- For LIVE trading data, use agents/data_agent.py ICICI WebSocket  
 - For HISTORICAL data, this module loads from local CSV files and cleans/preprocesses them
+
+Features:
+- Market hours filtering (9:15 AM - 3:30 PM IST only)
+- IST timestamp handling (no timezone conversion)
+- Clean CSV output with separate date/time columns
+- Comprehensive data validation and reporting
 
 Usage:
 - Data Warehouse: CSV files containing historical OHLCV data
@@ -17,7 +23,7 @@ Usage:
 import requests
 import json
 import hashlib
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import os
 import pandas as pd
 import csv
@@ -101,7 +107,7 @@ time_stamp = datetime.now(timezone.utc).isoformat()[:19] + '.000Z'
 # Payload for 5-minute interval data
 payload = json.dumps({
     "interval": "5minute",
-    "from_date": "2025-04-01T09:20:00.000Z",  # April 1, 2025 (market opening)
+    "from_date": "2025-04-01T10:20:00.000Z",  # April 1, 2025 (market opening)
     "to_date": "2025-10-01T15:30:00.000Z",    # October 1, 2025 (market closing)
     "stock_code": stock_code,
     "exchange_code": "NSE",
@@ -135,16 +141,16 @@ try:
     if "Success" in response_data and response_data["Success"]:
         historical_data = response_data["Success"]
         
-        # Prepare cleaned data for CSV
+        # Prepare cleaned data for CSV (Market Hours Only)
         cleaned_data = []
         
         for record in historical_data:
             # Extract and clean each record
             datetime_str = record.get('datetime', '')
             
-            # Keep original IST timestamps from API (no conversion needed)
+            # Handle IST timestamps from API (no conversion needed)
             if ' ' in datetime_str:
-                # Format: "2025-04-01 07:30:00" (IST from API)
+                # Format: "2025-04-01 09:15:00" (IST from API)
                 date_part = datetime_str.split(' ')[0]
                 time_part = datetime_str.split(' ')[1] if len(datetime_str.split(' ')) > 1 else ''
             else:
@@ -152,11 +158,25 @@ try:
                 date_part = datetime_str.split('T')[0] if 'T' in datetime_str else datetime_str[:10]
                 time_part = datetime_str.split('T')[1].replace('Z', '') if 'T' in datetime_str else ''
             
+            # Filter for market hours only (9:15 AM to 3:30 PM IST)
+            if time_part:
+                try:
+                    time_obj = datetime.strptime(time_part, "%H:%M:%S").time()
+                    market_start = datetime.strptime("09:15:00", "%H:%M:%S").time()
+                    market_end = datetime.strptime("15:30:00", "%H:%M:%S").time()
+                    
+                    # Skip records outside market hours
+                    if not (market_start <= time_obj <= market_end):
+                        continue
+                except:
+                    # If time parsing fails, skip this record
+                    continue
+            
             cleaned_record = {
                 'exchange_name': 'NSE',  # From our request
                 'stock_code': stock_code,  # From user input
-                'date': date_part,  # Original IST date from API
-                'time': time_part,  # Original IST time from API
+                'date': date_part,  # IST date from API
+                'time': time_part,  # IST time from API
                 'open': record.get('open', ''),
                 'high': record.get('high', ''),
                 'low': record.get('low', ''),
@@ -174,7 +194,32 @@ try:
             
             # Save to CSV
             df.to_csv(csv_filename, index=False)
-                    
+            
+            print(f"✅ Success! Market hours data saved to '{csv_filename}'")
+            print(f"📊 Records processed (9:15 AM - 3:30 PM IST only): {len(cleaned_data)}")
+            print(f"📅 Date range: {df['date'].min()} to {df['date'].max()}")
+            
+            # Market hours summary
+            print("\n🕐 Market Hours Data (IST):")
+            print(f"   First timestamp: {df.iloc[0]['date']} {df.iloc[0]['time']}")
+            print(f"   Last timestamp:  {df.iloc[-1]['date']} {df.iloc[-1]['time']}")
+            print(f"   Filtered to: 09:15:00 - 15:30:00 IST only")
+            
+            # Time range analysis
+            df['time_only'] = pd.to_datetime(df['time'], format='%H:%M:%S').dt.time
+            earliest_time = df['time_only'].min()
+            latest_time = df['time_only'].max()
+            
+            print(f"\n📈 Trading Session Summary:")
+            print(f"   Earliest time in data: {earliest_time}")
+            print(f"   Latest time in data:   {latest_time}")
+            print(f"   Total trading days:    {df['date'].nunique()}")
+            print(f"   Average records/day:   {len(df) // df['date'].nunique():.0f}")
+            
+            # Show sample data
+            print("\n🔍 Sample data (first 5 rows):")
+            print(df[['exchange_name', 'stock_code', 'date', 'time', 'open', 'high', 'low', 'close', 'volume']].head().to_string(index=False))
+            
         else:
             print("⚠️  No historical data found in response")
     
