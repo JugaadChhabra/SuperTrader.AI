@@ -37,8 +37,8 @@ from dotenv import load_dotenv
 # Constants
 ICICI_CUSTOMER_DETAIL_URL = "https://api.icicidirect.com/breezeapi/api/v1/customerdetails"
 ICICI_HISTORICAL_URL = "https://api.icicidirect.com/breezeapi/api/v1/historicalcharts"
-MARKET_OPEN_TIME = time(9, 15)  # 9:15 AM
-MARKET_CLOSE_TIME = time(15, 30)  # 3:30 PM
+MARKET_OPEN_TIME = time(9, 15)
+MARKET_CLOSE_TIME = time(15, 30)
 REQUIRED_OHLCV_COLUMNS = ['open', 'high', 'low', 'close', 'volume']
 load_dotenv()
 
@@ -63,163 +63,11 @@ if not all([secret_key, appkey, session_key]):
     exit(1)
 
 # ============================================================================
-# DATA VALIDATION FUNCTIONS
+# DATA VALIDATION - Import from technical indicators module
 # ============================================================================
 
-
-
-def validate_ohlc_logic(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Validate OHLC relationships and fix obvious data entry errors.
-    
-    Ensures that:
-    - High >= max(Open, Close, Low)
-    - Low <= min(Open, Close, High)
-    
-    Args:
-        df: DataFrame with OHLC columns
-        
-    Returns:
-        DataFrame with corrected OHLC values
-    """
-    df = df.copy()
-    
-    # Convert to numeric
-    for col in ['open', 'high', 'low', 'close']:
-        df[col] = pd.to_numeric(df[col], errors='coerce')
-    
-    # Check OHLC logic violations
-    invalid_high = (df['high'] < df[['open', 'close', 'low']].max(axis=1))
-    invalid_low = (df['low'] > df[['open', 'close', 'high']].min(axis=1))
-    
-    invalid_count = invalid_high.sum() + invalid_low.sum()
-    
-    if invalid_count > 0:
-        print(f"[WARNING] Found {invalid_count} OHLC logic violations - fixing...")
-        
-        # Fix high values (data entry errors)
-        df.loc[invalid_high, 'high'] = df.loc[invalid_high, ['open', 'close', 'low']].max(axis=1)
-        
-        # Fix low values (data entry errors)
-        df.loc[invalid_low, 'low'] = df.loc[invalid_low, ['open', 'close', 'high']].min(axis=1)
-    
-    return df
-
-def validate_volume_data(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Clean volume data by handling negative and missing values.
-    
-    Args:
-        df: DataFrame with volume column
-        
-    Returns:
-        DataFrame with cleaned volume data (negatives set to 0)
-    """
-    df = df.copy()
-    
-    # Convert volume to numeric
-    df['volume'] = pd.to_numeric(df['volume'], errors='coerce')
-    
-    # Handle negative volumes (data errors)
-    negative_volumes = (df['volume'] < 0).sum()
-    if negative_volumes > 0:
-        print(f"[FIX] Fixing {negative_volumes} negative volume entries...")
-        df.loc[df['volume'] < 0, 'volume'] = 0
-    
-    return df
-
-def remove_duplicate_timestamps(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Remove duplicate timestamp entries keeping the first occurrence.
-    
-    Args:
-        df: DataFrame with date and time columns
-        
-    Returns:
-        DataFrame with duplicate timestamps removed
-    """
-    df = df.copy()
-    
-    # Create datetime column for duplicate detection
-    df['datetime'] = df['date'] + ' ' + df['time']
-    
-    initial_count = len(df)
-    df = df.drop_duplicates(subset=['datetime'], keep='first')
-    final_count = len(df)
-    
-    duplicates_removed = initial_count - final_count
-    if duplicates_removed > 0:
-        print(f"[FIX] Removed {duplicates_removed} duplicate timestamps...")
-    
-    # Drop the temporary datetime column
-    df = df.drop('datetime', axis=1)
-    
-    return df
-
-def drop_missing_data(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Drop all rows with missing critical data to maintain 100% authenticity.
-    
-    Args:
-        df: DataFrame with OHLCV data
-        
-    Returns:
-        DataFrame with complete records only (no imputed values)
-    """
-    df = df.copy()
-    initial_count = len(df)
-    
-    # Drop any rows with missing OHLC data
-    df_clean = df.dropna(subset=['open', 'high', 'low', 'close'])
-    
-    # For volume, set NaN to 0 (common in some data feeds)
-    df_clean['volume'] = df_clean['volume'].fillna(0)
-    
-    dropped_count = initial_count - len(df_clean)
-    if dropped_count > 0:
-        print(f"[CLEANED] Dropped {dropped_count} rows with missing price data")
-        print(f"[INFO] Kept {len(df_clean)} complete records ({(len(df_clean)/initial_count)*100:.1f}% retention)")
-    
-    return df_clean
-
-
-
-def validate_and_clean_data(historical_data: List[Dict]) -> List[Dict]:
-    """
-    Comprehensive data validation pipeline using DROP missing data approach.
-    
-    Performs:
-    - OHLC logic validation and correction
-    - Volume data cleaning  
-    - Duplicate timestamp removal
-    - Missing data elimination (no imputation)
-    
-    Args:
-        historical_data: List of raw OHLCV dictionaries from API
-        
-    Returns:
-        List of validated and cleaned OHLCV dictionaries
-    """
-    print("\n[VALIDATION] Starting data validation pipeline...")
-    
-    df = pd.DataFrame(historical_data)
-    
-    df = remove_duplicate_timestamps(df)
-    
-    df = validate_ohlc_logic(df)
-    
-    df = validate_volume_data(df)
-    
-    df = drop_missing_data(df)
-    
-    columns_to_keep = ['exchange_name', 'stock_code', 'date', 'time', 'open', 'high', 'low', 'close', 'volume']
-    df_final = df[columns_to_keep]
-    
-    cleaned_data = df_final.to_dict('records')
-    
-    print("[SUCCESS] Data validation complete!")
-    
-    return cleaned_data
+# Import data validation functions from technical indicators module
+from indicators.technical import validate_and_clean_data
 
 print("Fetching session token...")
 time_stamp = datetime.now(timezone.utc).isoformat()[:19] + '.000Z'

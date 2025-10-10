@@ -1,9 +1,12 @@
 socketio
 websocket-client
 requests
-dotenv
+python-dotenv
 spacy
 numpy
 pandas
 langgraph
 tensorflow
+TA-Lib
+matplotlib
+scikit-learn
