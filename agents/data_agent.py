@@ -852,174 +852,161 @@ def interpolate_missing(df, method): # — forward/back fill, stitching.
 def resample_bars(df, interval): # — unify to target timeframe.
     pass
 
-def calculate_sma(prices: pd.Series, period: int) -> pd.Series:
-    """Calculate Simple Moving Average.
-    
-    Args:
-        prices: Series of closing prices
-        period: Number of periods for moving average
-        
-    Returns:
-        Series with SMA values
-    """
-    return prices.rolling(window=period, min_periods=period).mean()
-
-def calculate_rsi(prices: pd.Series, period: int = 14) -> pd.Series:
-    """Calculate Relative Strength Index.
-    
-    Args:
-        prices: Series of closing prices  
-        period: RSI period (default 14)
-        
-    Returns:
-        Series with RSI values (0-100)
-    """
-    delta = prices.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-    
-    rs = gain / loss
-    rsi = 100 - (100 / (1 + rs))
-    return rsi
-
-def calculate_macd(prices: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> Dict[str, pd.Series]:
-    """Calculate MACD (Moving Average Convergence Divergence).
-    
-    Args:
-        prices: Series of closing prices
-        fast: Fast EMA period (default 12)
-        slow: Slow EMA period (default 26) 
-        signal: Signal line EMA period (default 9)
-        
-    Returns:
-        Dict containing 'macd', 'signal', and 'histogram' Series
-    """
-    ema_fast = prices.ewm(span=fast).mean()
-    ema_slow = prices.ewm(span=slow).mean()
-    
-    macd_line = ema_fast - ema_slow
-    signal_line = macd_line.ewm(span=signal).mean()
-    histogram = macd_line - signal_line
-    
-    return {
-        'macd': macd_line,
-        'signal': signal_line, 
-        'histogram': histogram
-    }
+# Import TA-Lib technical indicators from our clean indicators package
+from indicators.technical import (
+    compute_all_indicators, 
+    validate_and_clean_data,
+    macd_multi_timeframe,
+    rsi_multi_period,
+    atr_volatility,
+    bollinger_bands,
+    volume_indicators,
+    momentum_oscillators,
+    trend_indicators,
+    futures_specific_indicators
+)
 
 def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
-    """Compute technical indicators for price data.
+    """Compute technical indicators using TA-Lib functions.
+    
+    This is a wrapper function that maintains backward compatibility
+    while using the new TA-Lib based indicators.
     
     Args:
         df: DataFrame with OHLCV data (expects 'close' column)
         
     Returns:
-        DataFrame with original data plus indicator columns
+        DataFrame with TA-Lib indicators added
     """
     if df.empty or 'close' not in df.columns:
         logger.warning("Invalid DataFrame for indicators - missing 'close' column")
         return df
     
+    try:
+        # Use the comprehensive TA-Lib indicator suite
+        result_df = compute_all_indicators(df, include_futures_indicators=False)
+        
+        logger.info("Computed TA-Lib indicators for %d rows", len(result_df))
+        return result_df
+        
+    except Exception as exc:
+        logger.exception("Error computing TA-Lib indicators: %s", exc)
+        return df
+
+
+def compute_mvp_indicators(df: pd.DataFrame) -> pd.DataFrame:
+    """Compute ONLY the MVP Day 2 required indicators using TA-Lib.
+    
+    Original requirements from README.md Day 2:
+    - MACD (multi-tf): Standard 12/26/9 configuration
+    - RSI30: RSI with 30 period
+    - ATR14: Average True Range with 14 period  
+    - Volume surge z-score: Volume anomaly detection
+    
+    Args:
+        df: DataFrame with OHLCV data
+        
+    Returns:
+        DataFrame with only the required MVP indicators
+    """
+    if df.empty or 'close' not in df.columns:
+        logger.warning("Invalid DataFrame for MVP indicators - missing 'close' column")
+        return df
+    
     result_df = df.copy()
     
     try:
-        # Simple Moving Averages (multiple timeframes)
-        result_df['sma_5'] = calculate_sma(df['close'], 5)
-        result_df['sma_10'] = calculate_sma(df['close'], 10)  
-        result_df['sma_20'] = calculate_sma(df['close'], 20)
-        result_df['sma_50'] = calculate_sma(df['close'], 50)
-        result_df['sma_200'] = calculate_sma(df['close'], 200)
+        # Import TA-Lib (with fallback)
+        try:
+            import talib
+        except ImportError:
+            logger.error("TA-Lib not available for MVP indicators")
+            return df
         
-        # RSI
-        result_df['rsi'] = calculate_rsi(df['close'], 14)
+        # 1. MACD (Standard 12/26/9) - Multi-timeframe requirement
+        close_prices = df['close'].astype(np.float64).values
+        macd_line, macd_signal, macd_histogram = talib.MACD(
+            close_prices, fastperiod=12, slowperiod=26, signalperiod=9
+        )
         
-        # MACD
-        macd_data = calculate_macd(df['close'])
-        result_df['macd'] = macd_data['macd']
-        result_df['macd_signal'] = macd_data['signal']
-        result_df['macd_histogram'] = macd_data['histogram']
+        result_df['macd'] = macd_line
+        result_df['macd_signal'] = macd_signal  
+        result_df['macd_histogram'] = macd_histogram
         
-        # Volume indicators (if volume column exists)
-        if 'volume' in df.columns:
-            result_df['volume_sma_20'] = calculate_sma(df['volume'], 20)
-            # Volume ratio (current vs average)
-            result_df['volume_ratio'] = df['volume'] / result_df['volume_sma_20']
+        # 2. RSI30 - Exactly as specified in requirements
+        rsi_30 = talib.RSI(close_prices, timeperiod=30)
+        result_df['rsi_30'] = rsi_30
+        
+        # 3. ATR14 - Volatility measure as required
+        if all(col in df.columns for col in ['high', 'low']):
+            high = df['high'].astype(np.float64).values
+            low = df['low'].astype(np.float64).values
+            atr_14 = talib.ATR(high, low, close_prices, timeperiod=14)
+            result_df['atr_14'] = atr_14
+        
+        # 4. Volume surge z-score - Volume anomaly detection
+        if 'volume' in df.columns and len(df) >= 20:
+            volume = df['volume'].astype(np.float64)
             
-        # Volatility regime features
-        if len(df) >= 20:
-            # Rolling standard deviation of returns
-            returns = df['close'].pct_change()
-            result_df['volatility_20'] = returns.rolling(20).std() * np.sqrt(252)  # Annualized
-            result_df['vol_regime'] = result_df['volatility_20'] > result_df['volatility_20'].rolling(50).mean()
+            # Rolling mean and std for z-score calculation
+            volume_mean = volume.rolling(20, min_periods=10).mean()
+            volume_std = volume.rolling(20, min_periods=10).std()
             
-        logger.info("Computed indicators for %d rows", len(result_df))
+            # Z-score calculation (current vs rolling average)
+            volume_zscore = (volume - volume_mean) / volume_std
+            result_df['volume_surge'] = volume_zscore.fillna(0)
+            
+            # Boolean flag for significant surges (>2 standard deviations)
+            result_df['volume_surge_flag'] = (abs(volume_zscore) > 2.0).fillna(False)
+        
+        # Add basic derived indicators for state representation
+        if len(df) >= 60:  # For 60-step window requirement
+            # Normalized close (for state representation)
+            close_series = pd.Series(close_prices, index=df.index)
+            result_df['norm_close'] = (close_series / close_series.rolling(60).mean()) - 1
+            
+            # Returns (1/5/15) as specified
+            result_df['return_1'] = close_series.pct_change(1)
+            result_df['return_5'] = close_series.pct_change(5) 
+            result_df['return_15'] = close_series.pct_change(15)
+            
+            # EWMA volatility (60 period)
+            returns_1d = result_df['return_1'].fillna(0)
+            result_df['vol_ewma60'] = returns_1d.ewm(span=60).std() * np.sqrt(252)
+        
+        logger.info("Computed MVP indicators (MACD, RSI30, ATR14, Volume surge) for %d rows", len(result_df))
+        return result_df
         
     except Exception as exc:
-        logger.exception("Error computing indicators: %s", exc)
-        
-    return result_df
+        logger.exception("Error computing MVP indicators: %s", exc)
+        return df
 
 
 def compute_futures_indicators(df: pd.DataFrame, spot_df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
-    """Compute futures-specific technical indicators.
+    """Compute futures-specific technical indicators using TA-Lib functions.
     
     Args:
         df: DataFrame with futures OHLCVI data
         spot_df: Optional DataFrame with spot index data for basis calculation
         
     Returns:
-        DataFrame with futures indicators added
+        DataFrame with TA-Lib futures indicators added
     """
     if df.empty or 'close' not in df.columns:
         logger.warning("Invalid DataFrame for futures indicators")
         return df
     
-    result_df = df.copy()
-    
     try:
-        # Standard technical indicators first
-        result_df = compute_indicators(result_df)
+        # Use comprehensive TA-Lib indicator suite with futures-specific indicators
+        result_df = compute_all_indicators(df, include_futures_indicators=True)
         
-        # Futures-specific indicators
-        if 'open_interest' in df.columns:
-            # Open Interest analysis
-            result_df['oi_sma_10'] = calculate_sma(df['open_interest'], 10)
-            result_df['oi_sma_20'] = calculate_sma(df['open_interest'], 20)
-            result_df['oi_change'] = df['open_interest'].pct_change()
-            result_df['oi_momentum'] = df['open_interest'] / result_df['oi_sma_20']
-            
-            # Volume-OI Divergence
-            if 'volume' in df.columns:
-                # Volume and OI should generally move together
-                volume_norm = (df['volume'] - df['volume'].rolling(20).mean()) / df['volume'].rolling(20).std()
-                oi_norm = (df['open_interest'] - df['open_interest'].rolling(20).mean()) / df['open_interest'].rolling(20).std()
-                result_df['vol_oi_divergence'] = abs(volume_norm - oi_norm)
-                
-                # High divergence suggests potential trend changes
-                result_df['vol_oi_signal'] = result_df['vol_oi_divergence'] > 1.5
-        
-        # Price-Volume relationship for futures
-        if 'volume' in df.columns:
-            # On Balance Volume (OBV) modified for futures
-            price_change = df['close'].diff()
-            obv_multiplier = np.where(price_change > 0, 1, np.where(price_change < 0, -1, 0))
-            result_df['obv'] = (df['volume'] * obv_multiplier).cumsum()
-            
-            # Volume Rate of Change
-            result_df['volume_roc_5'] = df['volume'].pct_change(5) * 100
-        
-        # Futures-specific momentum indicators
-        if len(df) >= 14:
-            # Commodity Channel Index (CCI) - useful for futures
-            typical_price = (df['high'] + df['low'] + df['close']) / 3
-            sma_tp = typical_price.rolling(14).mean()
-            mean_deviation = typical_price.rolling(14).apply(lambda x: abs(x - x.mean()).mean())
-            result_df['cci'] = (typical_price - sma_tp) / (0.015 * mean_deviation)
-            
-            # Williams %R - futures momentum
-            high_14 = df['high'].rolling(14).max()
-            low_14 = df['low'].rolling(14).min()
-            result_df['williams_r'] = -100 * ((high_14 - df['close']) / (high_14 - low_14))
+        # Add additional futures-specific analysis not covered by TA-Lib
+        if 'open_interest' in df.columns and 'volume' in df.columns:
+            # Volume-OI Divergence analysis
+            volume_norm = (df['volume'] - df['volume'].rolling(20).mean()) / df['volume'].rolling(20).std()
+            oi_norm = (df['open_interest'] - df['open_interest'].rolling(20).mean()) / df['open_interest'].rolling(20).std()
+            result_df['vol_oi_divergence'] = abs(volume_norm - oi_norm)
+            result_df['vol_oi_signal'] = result_df['vol_oi_divergence'] > 1.5
         
         # Basis indicators (if spot data provided)
         if spot_df is not None and 'close' in spot_df.columns:
@@ -1045,33 +1032,24 @@ def compute_futures_indicators(df: pd.DataFrame, spot_df: Optional[pd.DataFrame]
                     result_df['basis_basis_pct'] - result_df['basis_basis_pct'].rolling(20).mean()
                 ) / result_df['basis_basis_pct'].rolling(20).std()
         
-        # Rollover detection indicators
-        if 'open_interest' in df.columns and len(df) > 5:
-            # Sudden OI changes might indicate rollovers
-            oi_change_pct = df['open_interest'].pct_change()
-            result_df['potential_rollover'] = abs(oi_change_pct) > 0.3  # 30% OI change
-            
-            # Volume surge during rollover periods
-            if 'volume' in df.columns:
-                volume_ma = df['volume'].rolling(10).mean()
-                result_df['rollover_volume_surge'] = df['volume'] > (volume_ma * 2)
-        
-        logger.info("Computed futures indicators for %d rows", len(result_df))
+        logger.info("Computed TA-Lib futures indicators for %d rows", len(result_df))
+        return result_df
         
     except Exception as exc:
-        logger.exception("Error computing futures indicators: %s", exc)
-        
-    return result_df
+        logger.exception("Error computing TA-Lib futures indicators: %s", exc)
+        return df
 
 def build_feature_frame(futures_data: Dict[str, pd.DataFrame], 
                        spot_data: Optional[pd.DataFrame] = None,
-                       include_indicators: bool = True) -> pd.DataFrame:
+                       include_indicators: bool = True,
+                       mvp_mode: bool = False) -> pd.DataFrame:
     """Build final feature frame for model training from futures data.
     
     Args:
         futures_data: Dict mapping contract -> OHLCVI DataFrame
         spot_data: Optional spot index data for basis calculations
         include_indicators: Whether to compute technical indicators
+        mvp_mode: If True, use only MVP Day 2 required indicators (MACD, RSI30, ATR14, volume surge)
         
     Returns:
         DataFrame with model-ready features
@@ -1091,10 +1069,16 @@ def build_feature_frame(futures_data: Dict[str, pd.DataFrame],
     try:
         # 1. Add technical indicators if requested
         if include_indicators:
-            if spot_data is not None:
-                df = compute_futures_indicators(df, spot_data)
+            if mvp_mode:
+                # Use only MVP Day 2 required indicators
+                df = compute_mvp_indicators(df)
+                logger.info("Using MVP mode: MACD, RSI30, ATR14, volume surge only")
             else:
-                df = compute_indicators(df)
+                # Use comprehensive TA-Lib suite
+                if spot_data is not None:
+                    df = compute_futures_indicators(df, spot_data)
+                else:
+                    df = compute_indicators(df)
         
         # 2. Add price-based features
         if 'close' in df.columns:
@@ -1132,16 +1116,31 @@ def build_feature_frame(futures_data: Dict[str, pd.DataFrame],
         df['month'] = df.index.month
         df['is_month_end'] = (df.index + pd.DateOffset(days=1)).month != df.index.month
         
-        # 6. Add regime features
+        # 6. Add regime features (enhanced with TA-Lib indicators)
         if len(df) >= 50:
             # Trend regime (price vs long-term MA)
             if 'sma_50' in df.columns:
                 df['trend_regime'] = (df['close'] > df['sma_50']).astype(int)
+            
+            # ADX trend strength regime
+            if 'adx' in df.columns:
+                df['strong_trend_regime'] = (df['adx'] > 25).astype(int)
                 
             # Volatility regime (current vol vs historical)
             if 'realized_vol_20' in df.columns:
                 vol_median = df['realized_vol_20'].rolling(100).median()
                 df['vol_regime'] = (df['realized_vol_20'] > vol_median).astype(int)
+            
+            # ATR-based volatility regime
+            if 'atr_14' in df.columns:
+                atr_ma = df['atr_14'].rolling(50).mean()
+                df['high_vol_atr_regime'] = (df['atr_14'] > atr_ma * 1.5).astype(int)
+            
+            # RSI momentum regime
+            if 'rsi_14' in df.columns:
+                df['bullish_momentum'] = (df['rsi_14'] > 50).astype(int)
+                df['extreme_oversold'] = (df['rsi_14'] < 20).astype(int)
+                df['extreme_overbought'] = (df['rsi_14'] > 80).astype(int)
         
         # 7. Add cross-contract features if multiple contracts available
         if len(futures_data) > 1:
@@ -1156,7 +1155,7 @@ def build_feature_frame(futures_data: Dict[str, pd.DataFrame],
         
         # 8. Forward-fill any remaining NaN values for stability
         numeric_cols = df.select_dtypes(include=[np.number]).columns
-        df[numeric_cols] = df[numeric_cols].fillna(method='ffill')
+        df[numeric_cols] = df[numeric_cols].ffill()
         
         # 9. Add metadata
         df.attrs = {
@@ -1187,6 +1186,129 @@ def update_feature_store(symbol, features, ts): # — persist for RL/exec layers
 def get_feature_batch(symbols, ts_window):
     """Windowed features for RL."""
     pass
+
+
+def build_mvp_state_representation(df: pd.DataFrame, window_size: int = 60) -> np.ndarray:
+    """Build MVP Day 2 state representation as specified in requirements.
+    
+    Creates 60-step window of:
+    - norm_close: Normalized closing prices
+    - return_1/5/15: Returns at 1, 5, and 15 periods
+    - vol_ewma60: EWMA volatility (60-period)
+    - macd: MACD line
+    - rsi_30: RSI with 30-period
+    - volume_surge: Volume z-score
+    
+    Args:
+        df: DataFrame with MVP indicators computed
+        window_size: Window size for state representation (default 60)
+        
+    Returns:
+        numpy array of shape (n_samples, window_size, n_features)
+    """
+    if df.empty:
+        logger.warning("Empty DataFrame for MVP state representation")
+        return np.array([])
+    
+    # Required features for MVP state representation
+    required_features = [
+        'norm_close', 'return_1', 'return_5', 'return_15',
+        'vol_ewma60', 'macd', 'rsi_30', 'volume_surge'
+    ]
+    
+    # Check if all required features are present
+    missing_features = [feat for feat in required_features if feat not in df.columns]
+    if missing_features:
+        logger.error("Missing MVP features for state representation: %s", missing_features)
+        return np.array([])
+    
+    # Extract feature columns and handle NaN values
+    feature_data = df[required_features].copy()
+    
+    # Forward fill NaN values
+    feature_data = feature_data.fillna(method='ffill').fillna(0)
+    
+    # Create windowed sequences
+    sequences = []
+    n_samples = len(feature_data) - window_size + 1
+    
+    if n_samples <= 0:
+        logger.warning("Insufficient data for window size %d (need at least %d rows)", 
+                      window_size, window_size)
+        return np.array([])
+    
+    for i in range(n_samples):
+        window = feature_data.iloc[i:i + window_size].values
+        sequences.append(window)
+    
+    result = np.array(sequences)
+    logger.info("Built MVP state representation: shape %s, features %s", 
+               result.shape, required_features)
+    
+    return result
+
+
+def get_mvp_features_for_symbol(symbol: str, df: pd.DataFrame) -> Dict[str, Any]:
+    """Get MVP-compliant features for a single symbol.
+    
+    This function is the main entry point for Day 2 MVP requirements.
+    
+    Args:
+        symbol: Symbol name for logging
+        df: OHLCVI DataFrame
+        
+    Returns:
+        Dict containing MVP features and state representation
+    """
+    try:
+        # Step 1: Compute MVP indicators
+        df_with_indicators = compute_mvp_indicators(df)
+        
+        # Step 2: Build state representation
+        state_representation = build_mvp_state_representation(df_with_indicators)
+        
+        # Step 3: Extract latest values for real-time decisions
+        latest_row = df_with_indicators.iloc[-1] if not df_with_indicators.empty else {}
+        
+        mvp_features = {
+            'symbol': symbol,
+            'timestamp': latest_row.name if hasattr(latest_row, 'name') else None,
+            'state_representation': state_representation,
+            'latest_indicators': {
+                'macd': float(latest_row.get('macd', 0)),
+                'macd_signal': float(latest_row.get('macd_signal', 0)),
+                'macd_histogram': float(latest_row.get('macd_histogram', 0)),
+                'rsi_30': float(latest_row.get('rsi_30', 50)),
+                'atr_14': float(latest_row.get('atr_14', 0)),
+                'volume_surge': float(latest_row.get('volume_surge', 0)),
+                'volume_surge_flag': bool(latest_row.get('volume_surge_flag', False)),
+                'norm_close': float(latest_row.get('norm_close', 0)),
+                'return_1': float(latest_row.get('return_1', 0)),
+                'return_5': float(latest_row.get('return_5', 0)),
+                'return_15': float(latest_row.get('return_15', 0)),
+                'vol_ewma60': float(latest_row.get('vol_ewma60', 0))
+            },
+            'data_quality': {
+                'total_bars': len(df_with_indicators),
+                'state_sequences': len(state_representation),
+                'has_sufficient_data': len(state_representation) > 0
+            }
+        }
+        
+        logger.info("Generated MVP features for %s: %d state sequences", 
+                   symbol, len(state_representation))
+        
+        return mvp_features
+        
+    except Exception as exc:
+        logger.exception("Error generating MVP features for %s: %s", symbol, exc)
+        return {
+            'symbol': symbol,
+            'error': str(exc),
+            'state_representation': np.array([]),
+            'latest_indicators': {},
+            'data_quality': {'has_sufficient_data': False}
+        }
 
 def shutdown_data_agent():
     """Close sessions, flush buffers."""
