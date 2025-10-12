@@ -1,8 +1,8 @@
 metadata:
-  version: "3.0"
-  last_updated: "2025-10-05"
+  version: "3.1"
+  last_updated: "2025-10-12"
   description: "NSE Index Futures market specifications"
-  focus: "Core Market Data Only"
+  focus: "Core Market Data Only - Verified from Codebase"
 
 # NSE Index Futures Universe - Static Market Specifications
 # Global specifications (apply to all index futures)
@@ -12,6 +12,8 @@ global_futures_specs:
   settlement_type: "cash_settled"    # All index futures are cash settled
   multiplier: 1                      # Point value multiplier
   contract_type: "index_futures"
+  exchange_code: "NFO"               # NSE F&O segment
+  currency: "INR"                    # All contracts in Indian Rupees
   
 index_futures:
   NIFTY:
@@ -56,18 +58,23 @@ index_futures:
     point_value_inr: 50.0
     underlying: "CNX_IT_INDEX"
 
-# Core Market Sessions and Schedule
+# Core Market Sessions and Schedule (Verified from Code)
 market_sessions:
   nse_derivatives:
-    pre_open: "09:00-09:15"
-    regular_trading: "09:15-15:30"
+    pre_open: "09:00-09:15"           # Pre-open auction session
+    regular_trading: "09:15-15:30"   # Main trading session (verified in loaders.py)
     timezone: "Asia/Kolkata"
     
   # Trading calendar
   trading_schedule:
     trading_days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
     weekend_closed: ["Saturday", "Sunday"]
-    currency: "INR"                    # All NSE futures in INR
+    
+  # Time constraints from execution agent
+  auto_square_off:
+    warning_time: "15:10:00"          # Auto square-off warning at 3:10 PM
+    force_exit_time: "15:20:00"       # Broker force exit at 3:20 PM
+    time_penalty_threshold: 45        # Reduce position size if < 45 mins to close
     
   # Fixed Date Market Holidays (Annual)
   fixed_holidays:
@@ -127,7 +134,6 @@ exchange_info:
     expiry_time: "15:30:00"
     final_settlement_day: "expiry_day"
     contract_cycle_months: 3          # Current, next, far month
-    min_contract_value: 200000        # ₹2 lakh minimum (approx)
     
   # Price and quantity limits
   price_limits:
@@ -136,24 +142,106 @@ exchange_info:
     
   quantity_limits:
     min_order_quantity: 1             # Minimum 1 lot
-    max_order_quantity_lots: 500      # Maximum order size
+
+# Transaction Costs (Verified from execution_agent.py)
+transaction_costs:
+  futures:
+    brokerage_flat: 20.0              # ₹20 flat per order (verified)
+    stt_sell_pct: 0.0125             # 0.0125% STT on sell side only (verified)
+    exchange_charges_pct: 0.0019     # 0.0019% of turnover (verified)
+    sebi_charges: 10.0               # ₹10 per crore turnover (verified)
+    gst_pct: 18.0                    # 18% GST on brokerage + exchange charges
+    total_cost_bp: 2.0               # Approx 2 bps total (verified in environment)
     
-# Market Maker Information (Static Specs)
+  options:
+    brokerage_flat: 20.0
+    stt_sell_pct: 0.0625             # 5x higher STT for options (verified)
+    total_cost_bp: 8.0               # Higher costs for options
+
+# Margin Requirements (Verified from multiple files)
+margin_requirements:
+  mis_mode:  # Intraday margins
+    NIFTY: 60000                     # ₹60k per lot (verified in docs + code)
+    BANKNIFTY: 75000                 # ₹75k per lot (verified in docs + code)
+    FINNIFTY: 50000                  # ₹50k per lot (verified in docs + code)
+    MIDCPNIFTY: 65000                # ₹65k per lot (from docs)
+    CNXPHARMA: 70000                 # ₹70k per lot (from docs)
+    CNXIT: 55000                     # Estimated based on lot size
+    
+  nrml_mode:  # Overnight margins (approx 2x MIS)
+    NIFTY: 100000
+    BANKNIFTY: 150000
+    FINNIFTY: 80000
+    MIDCPNIFTY: 110000
+    CNXPHARMA: 120000
+    CNXIT: 90000
+
+# Risk Limits (Verified from code)
+risk_limits:
+  max_lots_per_symbol: 5             # Max 5 lots per symbol intraday (verified)
+  max_exposure_pct: 50               # Max 50% of capital exposure (verified)
+  target_volatility: 0.12            # 12% target vol for position sizing (verified)
+  initial_capital: 500000            # ₹5 lakh default capital (verified)
+    
+# Market Structure (Verified from execution_agent.py)
 market_structure:
   order_types: ["MARKET", "LIMIT", "SL", "SL-M"]
   validity_types: ["DAY", "IOC", "GTC"]
+  product_types: ["MIS", "NRML"]        # MIS=Intraday, NRML=Overnight
   
-# Data Feed Information (Connection Specs) 
+# Data Feed Information (From ICICI constants)
 data_feeds:
   primary_feed: "NSE_FO"
-  backup_feed: "NSE_FO_BACKUP" 
-  feed_protocol: "FIX_4.4"
+  icici_websocket_url: "https://livestream.icicidirect.com"
+  icici_api_base: "https://api.icicidirect.com/breezeapi/api/v1"
   
-  # Symbol mapping for data feeds
-  feed_symbol_format: "{nse_symbol_prefix}{expiry_month_code}"
+  # Symbol format for ICICI feed (verified in icici_broker.py)
+  symbol_format: "NSE:{INDEX}{YY}{MON}FUT"  # e.g., NSE:NIFTY25OCTFUT
   
-# Regulatory Limits (NSE/SEBI Rules)
-regulatory:
-  position_reporting_threshold_cr: 10.0    # Report if position > ₹10 cr
-  large_trade_threshold_cr: 5.0           # Large trade if > ₹5 cr  
-  market_wide_position_limit_pct: 15.0    # Max 15% of total market OI
+# Rollover Configuration (From futures_manager.py structure)
+rollover_config:
+  rollover_methods: ["ratio", "difference"]  # Adjustment methods available
+  default_method: "ratio"                   # Ratio method is default
+  rollover_trigger_days: 3                  # Start rollover 3 days before expiry
+  
+  # Rollover detection thresholds
+  gap_threshold_pct: 2.0                    # 2% gap threshold for rollover detection
+  volume_multiple: 1.0                      # Volume should be > rolling mean
+
+# Data Validation Thresholds (From constants.py)
+validation_thresholds:
+  price_spike_multiplier: 2.0               # 2x 99th percentile for spike detection
+  time_gap_multiplier: 2.0                  # 2x expected frequency for gap detection
+  zero_volume_threshold_pct: 10.0           # 10% of bars with zero volume allowed
+  oi_change_threshold_pct: 50.0             # 50% change in OI threshold
+
+# Technical Analysis Periods (From constants.py)
+analysis_periods:
+  rolling_periods: [5, 10, 20, 50, 100]    # Standard rolling window periods
+  trading_days_per_year: 252               # For annualization
+  volatility_factor: 252                   # EWMA annualization factor
+
+# Position Sizing Parameters (From rl_strategy_agent.py)
+position_sizing:
+  volatility_bounds: [0.5, 2.0]           # Vol scalar clipping bounds
+  kelly_clip_factor: 0.25                  # Conservative Kelly fraction
+  time_scaling_threshold: 45               # Minutes before close to scale down
+
+# Demo and Testing Configuration (From constants.py)
+demo_config:
+  default_symbols: "NSE:SBIN,NSE:RELIANCE"
+  chart_duration_minutes: 5                # 5 minutes for demo charts
+  chart_interval_seconds: 60               # 60 seconds between updates
+  default_config_path: "../configs/market.yaml"
+
+# Data Quality Metrics (From constants.py)
+data_quality:
+  default_risk_free_rate: 0.06             # 6% default risk-free rate
+  ohlcvi_columns: ["open", "high", "low", "close", "volume", "open_interest"]
+  price_columns: ["open", "high", "low", "close"]
+  numeric_columns: ["open", "high", "low", "close", "volume", "open_interest"]
+  
+  # Column mapping for data standardization
+  column_mapping:
+    datetime: "timestamp"
+    oi: "open_interest"

@@ -11,6 +11,97 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def extract_phase4_signals(state: np.ndarray, phase4_features: Optional[Dict[str, float]] = None) -> Dict[str, Any]:
+    """
+    Extract Phase 4 enhanced signals from state vector and additional features.
+    
+    Args:
+        state: State vector with normalized features
+        phase4_features: Dictionary of Phase 4 feature values
+        
+    Returns:
+        Dictionary of Phase 4 signal indicators
+    """
+    signals = {
+        'pcr_bullish': False,
+        'pcr_bearish': False,
+        'momentum_confluence': 0,
+        'market_regime_trend': False,
+        'high_risk_environment': False,
+        'high_quality_setup': False,
+        'volatility_regime': 'normal',
+        'options_flow_bullish': False,
+        'options_flow_bearish': False
+    }
+    
+    try:
+        if phase4_features:
+            # PCR sentiment analysis
+            pcr_percentile = phase4_features.get('pcr_percentile', 50)
+            signals['pcr_bullish'] = pcr_percentile > 80  # High PCR = oversold = bullish
+            signals['pcr_bearish'] = pcr_percentile < 20  # Low PCR = overbought = bearish
+            
+            # Momentum confluence
+            signals['momentum_confluence'] = int(phase4_features.get('momentum_confluence_score', 0))
+            
+            # Market regime
+            signals['market_regime_trend'] = bool(phase4_features.get('market_regime_strong_trend', False))
+            
+            # Risk assessment
+            risk_score = phase4_features.get('market_risk_score', 0.5)
+            signals['high_risk_environment'] = risk_score > 0.7
+            
+            # Setup quality
+            quality_score = phase4_features.get('setup_quality_score', 0.5)
+            signals['high_quality_setup'] = quality_score > 0.75
+            
+            # Volatility regime
+            vol_regime_high = phase4_features.get('volatility_regime_high', False)
+            vol_regime_low = phase4_features.get('volatility_regime_low', False)
+            if vol_regime_high:
+                signals['volatility_regime'] = 'high'
+            elif vol_regime_low:
+                signals['volatility_regime'] = 'low'
+            else:
+                signals['volatility_regime'] = 'normal'
+            
+            # Options flow bias
+            flow_bias = phase4_features.get('options_flow_bias', 0)
+            signals['options_flow_bullish'] = flow_bias > 0.3
+            signals['options_flow_bearish'] = flow_bias < -0.3
+        
+        # Extract from extended state vector if Phase 4 features are embedded
+        elif len(state) > 10:  # Extended state with Phase 4 features
+            
+            # PCR features (positions 10-12 in state)
+            if len(state) > 12:
+                pcr_norm = state[10]  # Normalized PCR percentile
+                signals['pcr_bullish'] = pcr_norm > 0.8
+                signals['pcr_bearish'] = pcr_norm < 0.2
+            
+            # Confluence features (positions 13-15)
+            if len(state) > 15:
+                confluence_norm = state[13]  # Normalized confluence score
+                signals['momentum_confluence'] = int(confluence_norm * 3)  # Scale to 0-3
+            
+            # Market regime (position 16)
+            if len(state) > 16:
+                signals['market_regime_trend'] = state[16] > 0.5
+            
+            # Risk level (position 17)
+            if len(state) > 17:
+                signals['high_risk_environment'] = state[17] > 0.7
+            
+            # Setup quality (position 18)
+            if len(state) > 18:
+                signals['high_quality_setup'] = state[18] > 0.75
+        
+    except Exception as e:
+        logger.warning(f"Phase 4 signal extraction failed: {e}")
+    
+    return signals
+
+
 def init_rl_agent(
     config: Dict[str, Any],
     action_space: int,
@@ -125,14 +216,16 @@ def build_state_representation(
 def sample_action(
     state: np.ndarray,
     mode: str = 'eval',
-    time_remaining: float = 180.0
+    time_remaining: float = 180.0,
+    phase4_features: Optional[Dict[str, float]] = None
 ) -> Dict[str, Any]:
     """
-    Sample action from RL model
-    Day 1: Rule-based logic (RSI + MACD)
-    Future: DQN/PPO inference
+    Sample action from RL model - Phase 4 Enhanced
+    Enhanced with PCR sentiment, confluence indicators, and market regime analysis
+    Day 1: Rule-based logic (RSI + MACD + Phase 4 enhancements)
+    Future: DQN/PPO inference with expanded feature space
     """
-    logger.debug(f"Sampling action - Mode: {mode}, Time: {time_remaining:.1f} mins")
+    logger.debug(f"Sampling action (Phase 4) - Mode: {mode}, Time: {time_remaining:.1f} mins")
     
     # Time-based aggression
     if time_remaining < 15:  # After 3:00 PM
@@ -144,30 +237,81 @@ def sample_action(
     else:
         aggression = 1.0
     
-    # Extract features from state vector
-    rsi_norm = state[0]
-    macd_norm = state[1]
+    # Extract basic features from state vector
+    rsi_norm = state[0] if len(state) > 0 else 0.5
+    macd_norm = state[1] if len(state) > 1 else 0.0
     
     rsi = rsi_norm * 100
     macd = macd_norm * 100
     
-    # RULE-BASED LOGIC (Day 1 MVP)
-    # Buy: RSI < 40 AND MACD > 0 (oversold + positive momentum)
-    # Sell: RSI > 60 AND MACD < 0 (overbought + negative momentum)
-    # Hold: Otherwise
+    # Phase 4: Extract enhanced features if available
+    phase4_signals = extract_phase4_signals(state, phase4_features)
     
-    if rsi < 40 and macd > 0:
-        action = 1  # Long
-        confidence = min(1.0, (40 - rsi) / 40 + abs(macd) / 50)
-        logger.info(f"🟢 LONG signal | RSI: {rsi:.1f} | MACD: {macd:.2f}")
-    elif rsi > 60 and macd < 0:
-        action = -1  # Short
-        confidence = min(1.0, (rsi - 60) / 40 + abs(macd) / 50)
-        logger.info(f"🔴 SHORT signal | RSI: {rsi:.1f} | MACD: {macd:.2f}")
+    # ENHANCED RULE-BASED LOGIC (Phase 4)
+    # Multi-factor decision making with Phase 4 features
+    
+    # Base RSI + MACD signals
+    rsi_oversold = rsi < 40
+    rsi_overbought = rsi > 60
+    macd_bullish = macd > 0
+    macd_bearish = macd < 0
+    
+    # Phase 4: Additional signal filters
+    pcr_bullish = phase4_signals.get('pcr_bullish', False)
+    pcr_bearish = phase4_signals.get('pcr_bearish', False)
+    momentum_confluence = phase4_signals.get('momentum_confluence', 0)
+    market_regime_trend = phase4_signals.get('market_regime_trend', False)
+    high_risk_env = phase4_signals.get('high_risk_environment', False)
+    high_quality_setup = phase4_signals.get('high_quality_setup', False)
+    
+    # Enhanced decision logic
+    if rsi_oversold and macd_bullish:
+        # Base bullish signal - enhance with Phase 4 filters
+        base_confidence = (40 - rsi) / 40 + abs(macd) / 50
+        
+        # Phase 4 enhancements
+        pcr_boost = 0.2 if pcr_bullish else -0.1 if pcr_bearish else 0
+        confluence_boost = 0.15 * (momentum_confluence / 3.0) if momentum_confluence else 0
+        regime_boost = 0.1 if market_regime_trend else -0.05
+        quality_boost = 0.15 if high_quality_setup else 0
+        risk_penalty = -0.2 if high_risk_env else 0
+        
+        confidence = min(1.0, base_confidence + pcr_boost + confluence_boost + regime_boost + quality_boost + risk_penalty)
+        
+        # Only take position if Phase 4 filters support it
+        if confidence > 0.4 and not high_risk_env:
+            action = 1  # Long
+            logger.info(f"🟢 ENHANCED LONG | RSI: {rsi:.1f} | MACD: {macd:.2f} | PCR: {pcr_bullish} | Conf: {confluence_boost:.2f}")
+        else:
+            action = 0
+            confidence = 0.3
+            logger.info(f"⚪ FILTERED LONG | Risk too high or weak confluence")
+            
+    elif rsi_overbought and macd_bearish:
+        # Base bearish signal - enhance with Phase 4 filters
+        base_confidence = (rsi - 60) / 40 + abs(macd) / 50
+        
+        # Phase 4 enhancements
+        pcr_boost = 0.2 if pcr_bearish else -0.1 if pcr_bullish else 0
+        confluence_boost = 0.15 * (momentum_confluence / 3.0) if momentum_confluence else 0
+        regime_boost = 0.1 if market_regime_trend else -0.05  # Trend can support short in downtrend
+        quality_boost = 0.15 if high_quality_setup else 0
+        risk_penalty = -0.2 if high_risk_env else 0
+        
+        confidence = min(1.0, base_confidence + pcr_boost + confluence_boost + regime_boost + quality_boost + risk_penalty)
+        
+        # Only take position if Phase 4 filters support it
+        if confidence > 0.4 and not high_risk_env:
+            action = -1  # Short
+            logger.info(f"🔴 ENHANCED SHORT | RSI: {rsi:.1f} | MACD: {macd:.2f} | PCR: {pcr_bearish} | Conf: {confluence_boost:.2f}")
+        else:
+            action = 0
+            confidence = 0.3
+            logger.info(f"⚪ FILTERED SHORT | Risk too high or weak confluence")
     else:
         action = 0  # Hold
         confidence = 0.3
-        logger.info(f"⚪ HOLD | RSI: {rsi:.1f} | MACD: {macd:.2f}")
+        logger.info(f"⚪ HOLD | RSI: {rsi:.1f} | MACD: {macd:.2f} | Regime: {market_regime_trend}")
     
     # Apply aggression multiplier
     final_action = action * aggression
@@ -182,9 +326,16 @@ def sample_action(
         'q_values': q_values,
         'confidence': confidence,
         'mode': mode,
-        'logic': 'rule_based',
+        'logic': 'phase4_enhanced_rule_based',
         'rsi': rsi,
-        'macd': macd
+        'macd': macd,
+        # Phase 4 enhancements
+        'phase4_signals': phase4_signals,
+        'pcr_sentiment': 'bullish' if pcr_bullish else 'bearish' if pcr_bearish else 'neutral',
+        'momentum_confluence_score': momentum_confluence,
+        'market_regime': 'trending' if market_regime_trend else 'consolidating',
+        'risk_level': 'high' if high_risk_env else 'normal',
+        'setup_quality': 'high' if high_quality_setup else 'standard'
     }
     
     return action_dict

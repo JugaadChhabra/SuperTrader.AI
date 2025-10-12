@@ -26,7 +26,7 @@ from .constants import (
 )
 from .validators import validate_futures_data, validate_dataframe_structure
 from .futures_manager import generate_futures_symbol
-from .feature_builders import build_comprehensive_features
+from .feature_builders import build_comprehensive_features, build_feature_frame
 
 logger = logging.getLogger(__name__)
 if not logger.handlers:
@@ -293,20 +293,50 @@ def build_feature_frame(futures_data: Dict[str, pd.DataFrame],
             else:
                 df = compute_indicators(df, minimal_mode=minimal_mode)
         
-        # 2. Build comprehensive feature set using the feature builders
-        df = build_comprehensive_features(df, futures_data, spot_data, minimal_mode)
+        # 2. Build comprehensive feature set using Phase 4 enhanced feature builders
+        config = _load_market_config()
         
-        # 3. Add metadata
+        # Phase 4: Use enhanced feature frame builder with PCR and multi-timeframe support
+        df = build_feature_frame(
+            futures_data=futures_data,
+            spot_data=spot_data, 
+            include_indicators=include_indicators,
+            minimal_mode=minimal_mode,
+            config=config
+        )
+        
+        # Fallback to legacy builder if Phase 4 fails
+        if df.empty or len(df.columns) < 10:
+            logger.warning("Phase 4 feature building failed, using legacy builder")
+            df = build_comprehensive_features(df if not df.empty else futures_data[primary_contract], 
+                                            futures_data, spot_data, minimal_mode)
+        
+        # 3. Add enhanced metadata with Phase 4 info
+        base_columns = ['open', 'high', 'low', 'close', 'volume', 'open_interest', 'timestamp']
+        feature_columns = [col for col in df.columns if col not in base_columns]
+        
+        # Categorize features by type
+        phase4_features = [col for col in feature_columns if any(x in col.lower() for x in 
+                          ['pcr', 'confluence', 'regime', 'microstructure', 'oi_concentration'])]
+        technical_features = [col for col in feature_columns if any(x in col.lower() for x in 
+                             ['rsi', 'macd', 'atr', 'bb_', 'sma', 'ema', 'adx'])]
+        
         df.attrs = {
             'primary_contract': primary_contract,
-            'feature_count': len([col for col in df.columns if col not in ['open', 'high', 'low', 'close', 'volume', 'open_interest']]),
+            'total_features': len(feature_columns),
+            'phase4_features': len(phase4_features),
+            'technical_features': len(technical_features),
             'has_indicators': include_indicators,
             'has_spot_data': spot_data is not None,
-            'minimal_mode': minimal_mode
+            'has_pcr_integration': any('pcr' in col.lower() for col in df.columns),
+            'has_multi_timeframe': any('confluence' in col.lower() for col in df.columns),
+            'minimal_mode': minimal_mode,
+            'phase4_enabled': True
         }
         
-        logger.info("Built feature frame with %d features for %d rows", 
-                   df.attrs['feature_count'], len(df))
+        logger.info("Built Phase 4 enhanced feature frame: %d total features (%d Phase 4, %d technical) for %d rows", 
+                   df.attrs['total_features'], df.attrs['phase4_features'], 
+                   df.attrs['technical_features'], len(df))
         
         return df
         
