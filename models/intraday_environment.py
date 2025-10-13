@@ -1,6 +1,7 @@
 """
 Intraday Trading Environment - PRODUCTION
 Gym-like environment for RL training with intraday-specific reward function
+Phase 5 Enhanced with monitoring integration
 """
 
 import numpy as np
@@ -8,6 +9,16 @@ import pandas as pd
 from typing import Dict, Tuple, Optional, Any
 import logging
 from datetime import datetime, time as dt_time
+
+# Phase 5 Monitoring Integration
+try:
+    from utils.monitoring_integration import (
+        monitor_rl_decision, track_performance, get_health_monitor
+    )
+    MONITORING_AVAILABLE = True
+except ImportError:
+    MONITORING_AVAILABLE = False
+    logging.warning("Monitoring integration not available")
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +45,7 @@ class IntradayTradingEnv:
         mis_mode: bool = True
     ):
         """
-        Initialize environment
+        Initialize environment - Phase 5 Enhanced
         
         Args:
             data: DataFrame with OHLCV + indicators for multiple days
@@ -59,6 +70,9 @@ class IntradayTradingEnv:
         self.flat_by_close_bonus = flat_by_close_bonus
         self.mis_mode = mis_mode
         
+        # Phase 5: Detect Phase 4 feature availability
+        self._detect_phase4_features()
+        
         # Group data by trading days
         self.data['date'] = pd.to_datetime(self.data.index).date
         self.trading_days = self.data['date'].unique()
@@ -82,6 +96,60 @@ class IntradayTradingEnv:
         self.num_trades = 0
         
         logger.info(f"IntradayTradingEnv initialized - {len(self.trading_days)} trading days, Capital: ₹{initial_capital:,.0f}")
+        logger.info(f"Phase 4 features detected: {self._has_phase4_features}, Feature count: {self._get_feature_count()}")
+    
+    def _detect_phase4_features(self):
+        """
+        Detect if Phase 4 enhanced features are available in the dataset
+        """
+        self._has_phase4_features = False
+        self._phase4_feature_categories = {
+            'pcr_features': False,
+            'confluence_features': False, 
+            'regime_features': False,
+            'oi_features': False,
+            'quality_features': False
+        }
+        
+        if self.data.empty:
+            return
+            
+        # Check for Phase 4 feature categories
+        columns = set(self.data.columns)
+        
+        # PCR features
+        pcr_indicators = ['pcr_percentile', 'pcr_oversold', 'oi_pcr', 'composite_pcr', 'options_flow_bias']
+        if any(col in columns for col in pcr_indicators):
+            self._phase4_feature_categories['pcr_features'] = True
+            
+        # Confluence features  
+        confluence_indicators = ['momentum_confluence_score', 'overall_confluence_score', 'strong_market_confluence']
+        if any(col in columns for col in confluence_indicators):
+            self._phase4_feature_categories['confluence_features'] = True
+            
+        # Market regime features
+        regime_indicators = ['market_regime_strong_trend', 'volatility_regime_high', 'high_risk_environment']
+        if any(col in columns for col in regime_indicators):
+            self._phase4_feature_categories['regime_features'] = True
+            
+        # Enhanced OI features
+        oi_indicators = ['oi_concentration_index', 'oi_flow_1d', 'price_oi_efficiency', 'volume_oi_divergence_score']
+        if any(col in columns for col in oi_indicators):
+            self._phase4_feature_categories['oi_features'] = True
+            
+        # Quality & Risk features
+        quality_indicators = ['setup_quality_score', 'market_risk_score', 'price_action_quality_score']
+        if any(col in columns for col in quality_indicators):
+            self._phase4_feature_categories['quality_features'] = True
+        
+        # Overall Phase 4 detection
+        self._has_phase4_features = any(self._phase4_feature_categories.values())
+        
+        if self._has_phase4_features:
+            enabled_categories = [cat for cat, enabled in self._phase4_feature_categories.items() if enabled]
+            logger.info(f"Phase 4 features detected: {enabled_categories}")
+        else:
+            logger.info("Using legacy feature set (Phase 3 and below)")
     
     def reset(self) -> np.ndarray:
         """
@@ -209,13 +277,31 @@ class IntradayTradingEnv:
         # Get next state
         next_state = self._get_state()
         
+        # Phase 5 Monitoring Integration
+        if MONITORING_AVAILABLE:
+            try:
+                # Record RL decision for monitoring
+                action_names = {0: 'short', 1: 'hold', 2: 'long'}
+                confidence = abs(reward) / (abs(reward) + 1.0)  # Simple confidence proxy
+                phase4_enhanced = hasattr(self, 'phase4_features_detected') and self.phase4_features_detected
+                
+                monitor = get_health_monitor()
+                monitor.record_rl_decision(
+                    action=action_names.get(action, 'unknown'),
+                    confidence=confidence,
+                    phase4_enhanced=phase4_enhanced
+                )
+            except Exception as e:
+                logger.warning(f"Failed to record RL decision metrics: {e}")
+        
         info = {
             'position': self.position,
             'unrealized_pnl': self.unrealized_pnl,
             'realized_pnl': self.realized_pnl,
             'total_pnl': self.realized_pnl + self.unrealized_pnl,
             'num_trades': self.num_trades,
-            'minutes_to_close': minutes_to_close
+            'minutes_to_close': minutes_to_close,
+            'phase4_enhanced': hasattr(self, 'phase4_features_detected') and self.phase4_features_detected
         }
         
         return next_state, reward, done, info
@@ -293,25 +379,202 @@ class IntradayTradingEnv:
     
     def _get_state(self) -> np.ndarray:
         """
-        Get current state
-        Note: In practice, this should use IntradayStateBuilder
-        For environment, we return a placeholder
+        Get current state - Phase 5 Enhanced with Phase 4 features
+        Expanded to include PCR, confluence, and regime indicators
         """
-        # This is a placeholder - actual state building done by IntradayStateBuilder
-        if self.current_step < 30:
-            return np.zeros((30, 32), dtype=np.float32)
+        # Phase 5: Expanded feature space from 32 to 65+ features
+        feature_count = self._get_feature_count()
         
-        # Return window of recent data (simplified)
+        if self.current_step < 30:
+            return np.zeros((30, feature_count), dtype=np.float32)
+        
+        # Return window of recent data with Phase 4 enhancements
         window = self.current_day_data.iloc[max(0, self.current_step-30):self.current_step]
         
         if len(window) < 30:
             # Pad with zeros
-            padding = np.zeros((30 - len(window), 32))
-            state = np.vstack([padding, np.zeros((len(window), 32))])
+            padding = np.zeros((30 - len(window), feature_count))
+            state_data = self._extract_enhanced_features(window)
+            if state_data.shape[0] > 0:
+                state = np.vstack([padding, state_data])
+            else:
+                state = np.zeros((30, feature_count))
         else:
-            state = np.zeros((30, 32))
+            state_data = self._extract_enhanced_features(window)
+            state = state_data if state_data.shape[0] == 30 else np.zeros((30, feature_count))
         
         return state.astype(np.float32)
+    
+    def _get_feature_count(self) -> int:
+        """
+        Determine feature count based on available Phase 4 enhancements
+        """
+        base_features = 32  # Original OHLCV + basic indicators
+        
+        # Phase 4 feature additions
+        if hasattr(self, '_has_phase4_features') and self._has_phase4_features:
+            return 68  # Base + Phase 4 enhancements
+        else:
+            return base_features
+    
+    def _extract_enhanced_features(self, window: pd.DataFrame) -> np.ndarray:
+        """
+        Extract Phase 5 enhanced feature vectors from data window
+        """
+        if window.empty:
+            return np.zeros((0, self._get_feature_count()))
+        
+        try:
+            features_list = []
+            
+            for _, row in window.iterrows():
+                feature_vector = self._build_feature_vector(row)
+                features_list.append(feature_vector)
+            
+            if features_list:
+                return np.array(features_list)
+            else:
+                return np.zeros((len(window), self._get_feature_count()))
+                
+        except Exception as e:
+            logger.warning(f"Feature extraction failed: {e}")
+            return np.zeros((len(window), self._get_feature_count()))
+    
+    def _build_feature_vector(self, row: pd.Series) -> np.ndarray:
+        """
+        Build Phase 5 enhanced feature vector from row data
+        """
+        feature_count = self._get_feature_count()
+        features = np.zeros(feature_count)
+        
+        try:
+            # Base features (0-31): OHLCV + basic technical indicators
+            base_cols = ['open', 'high', 'low', 'close', 'volume']
+            tech_cols = ['rsi_14', 'macd', 'macd_signal', 'atr_14', 'bb_upper', 'bb_lower', 'sma_20', 'ema_12']
+            
+            idx = 0
+            
+            # OHLCV features (normalized)
+            for col in base_cols:
+                if col in row.index:
+                    if col in ['open', 'high', 'low', 'close']:
+                        features[idx] = row[col] / 20000.0  # Price normalization
+                    elif col == 'volume':
+                        features[idx] = min(row[col] / 100000.0, 5.0)  # Volume normalization
+                    idx += 1
+            
+            # Basic technical indicators (normalized)
+            for col in tech_cols:
+                if col in row.index:
+                    if 'rsi' in col:
+                        features[idx] = row[col] / 100.0
+                    elif 'macd' in col:
+                        features[idx] = np.tanh(row[col] / 50.0)
+                    elif 'atr' in col:
+                        features[idx] = min(row[col] / 100.0, 1.0)
+                    elif any(x in col for x in ['bb_', 'sma_', 'ema_']):
+                        features[idx] = row[col] / 20000.0
+                    else:
+                        features[idx] = np.tanh(row[col])
+                    idx += 1
+            
+            # Phase 4 features (32-67) if available
+            if feature_count > 32:
+                phase4_features = self._extract_phase4_features(row)
+                features[32:32+len(phase4_features)] = phase4_features
+                
+        except Exception as e:
+            logger.warning(f"Feature vector building failed: {e}")
+            
+        return features
+    
+    def _extract_phase4_features(self, row: pd.Series) -> np.ndarray:
+        """
+        Extract Phase 4 enhanced features from row data
+        Phase 5 Enhanced with monitoring
+        """
+        phase4_features = np.zeros(36)  # 36 Phase 4 features
+        
+        # Phase 5 Monitoring Integration
+        if MONITORING_AVAILABLE:
+            performance_tracker = track_performance('feature_generation', 'phase4_extraction')
+            performance_tracker.__enter__()
+        else:
+            performance_tracker = None
+        
+        try:
+            idx = 0
+            
+            # PCR features (0-7)
+            pcr_cols = ['pcr_percentile', 'pcr_oversold', 'pcr_overbought', 'pcr_volatility',
+                       'oi_pcr', 'vol_pcr', 'composite_pcr', 'options_flow_bias']
+            for col in pcr_cols:
+                if col in row.index:
+                    if 'percentile' in col:
+                        phase4_features[idx] = row[col] / 100.0
+                    elif col in ['pcr_oversold', 'pcr_overbought']:
+                        phase4_features[idx] = float(row[col])
+                    elif 'pcr' in col:
+                        phase4_features[idx] = np.tanh(row[col])
+                    else:
+                        phase4_features[idx] = np.tanh(row[col])
+                idx += 1
+            
+            # Confluence features (8-15)
+            confluence_cols = ['momentum_confluence_score', 'rsi_confluence_bullish', 'macd_confluence_score',
+                             'trend_confluence_score', 'overall_confluence_score', 'strong_market_confluence',
+                             'rsi_strong_confluence', 'macd_strong_confluence']
+            for col in confluence_cols:
+                if col in row.index:
+                    if 'score' in col:
+                        phase4_features[idx] = min(row[col] / 3.0, 1.0)
+                    else:
+                        phase4_features[idx] = float(row[col])
+                idx += 1
+            
+            # Market regime features (16-23)
+            regime_cols = ['market_regime_strong_trend', 'market_regime_consolidation',
+                          'volatility_regime_high', 'volatility_regime_low', 'volatility_expanding',
+                          'volatility_contracting', 'high_risk_environment', 'low_risk_environment']
+            for col in regime_cols:
+                if col in row.index:
+                    phase4_features[idx] = float(row[col])
+                idx += 1
+            
+            # Enhanced OI features (24-31)
+            oi_cols = ['oi_concentration_index', 'oi_percentile_rank', 'oi_flow_1d', 'oi_acceleration',
+                      'price_oi_efficiency', 'oi_trend_strength', 'volume_oi_divergence_score', 'oi_strong_trend']
+            for col in oi_cols:
+                if col in row.index:
+                    if 'percentile' in col or 'concentration' in col:
+                        phase4_features[idx] = row[col] / 100.0
+                    elif 'efficiency' in col or 'flow' in col:
+                        phase4_features[idx] = np.tanh(row[col])
+                    else:
+                        phase4_features[idx] = float(row[col]) if col in ['oi_strong_trend'] else np.tanh(row[col])
+                idx += 1
+            
+            # Quality & Risk features (32-35)
+            quality_cols = ['setup_quality_score', 'market_risk_score', 'high_quality_setup', 'price_action_quality_score']
+            for col in quality_cols:
+                if col in row.index:
+                    if 'score' in col:
+                        phase4_features[idx] = row[col]  # Already 0-1 range
+                    else:
+                        phase4_features[idx] = float(row[col])
+                idx += 1
+                
+        except Exception as e:
+            logger.warning(f"Phase 4 feature extraction failed: {e}")
+            if performance_tracker:
+                performance_tracker.success = False
+                
+        finally:
+            # Complete performance tracking
+            if performance_tracker:
+                performance_tracker.__exit__(None, None, None)
+            
+        return phase4_features
     
     def get_episode_metrics(self) -> Dict[str, float]:
         """Calculate episode-level metrics"""

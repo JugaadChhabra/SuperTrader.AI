@@ -1,0 +1,179 @@
+# SuperTrader.AI Configuration - Phase 5 Enhanced
+# Dynamic feature selection and comprehensive system configuration
+
+# Phase 4 Enhanced Features Configuration
+phase4:
+  enabled: true
+  pcr_integration: true
+  multi_timeframe_analysis: true
+  enhanced_oi_analysis: true
+  market_regime_detection: true
+  microstructure_analysis: true
+  
+  # PCR Data Configuration
+  pcr_data_source: "live"  # Options: live, historical, mock
+  pcr_update_frequency: 60  # seconds
+  pcr_lookback_periods: 50
+  
+  # Multi-timeframe Analysis
+  timeframes: ["5min", "15min", "1H"]
+  base_timeframe: "5min"
+  confluence_threshold: 0.75
+  
+  # Risk & Quality Thresholds
+  risk_threshold_high: 0.7
+  quality_threshold_min: 0.4
+  setup_quality_threshold: 0.75
+
+# Core Trading Configuration
+trading:
+  # Market Session (IST)
+  market_open: "09:15:00"
+  market_close: "15:30:00" 
+  square_off_time: "15:10:00"
+  
+  # Position Management
+  max_position_size: 5  # lots
+  target_volatility: 0.12  # 12% for intraday
+  position_sizing_method: "phase4_adaptive"  # Options: fixed, volatility_adjusted, phase4_adaptive
+  
+  # Risk Management
+  stop_loss_pct: 0.02  # 2%
+  take_profit_pct: 0.04  # 4%
+  max_daily_loss_pct: 0.05  # 5%
+  max_drawdown_pct: 0.1  # 10%
+  
+  # Trading Costs (Indian F&O)
+  brokerage_flat: 20.0  # ₹20 per order
+  stt_sell_pct: 0.0125  # 1.25 basis points on sell
+  exchange_charges_pct: 0.002  # 0.2 basis points
+  gst_pct: 0.18  # 18% on brokerage
+
+# Data Management Configuration
+data:
+  # Data Sources
+  primary_data_source: "icici"
+  backup_data_sources: ["historical", "mock"]
+  
+  # Data Quality & Validation
+  enable_data_validation: true
+  spike_detection_threshold: 3.0  # standard deviations
+  missing_data_tolerance_pct: 0.05  # 5%
+  
+  # Performance Optimization
+  enable_data_caching: true
+  cache_expiry_minutes: 5
+  cache_directory: "/tmp/supertrader_cache"
+  
+  # Historical Data
+  lookback_days: 30
+  warmup_periods: 100
+
+# Model Configuration
+model:
+  # Model architecture settings
+  hidden_sizes: [512, 256, 128]
+  dropout_rate: 0.2
+  learning_rate: 0.0001
+  batch_size: 64
+  
+  # Training parameters
+  episodes: 1000
+  max_steps_per_episode: 500
+  memory_size: 100000
+  target_update_frequency: 1000
+
+# Performance Configuration - Phase 5
+performance:
+  # Caching settings
+  cache_max_size: 2000
+  cache_ttl_seconds: 600
+  enable_disk_cache: true
+  cache_dir: "cache"
+  max_disk_size_mb: 1000
+  
+  # Memory optimization
+  enable_memory_optimization: true
+  memory_check_interval_seconds: 300
+  max_memory_usage_pct: 85.0
+  
+  # Feature calculation optimization
+  enable_batch_processing: true
+  batch_size: 500
+  parallel_processing: true
+  max_workers: 4
+  
+  # Performance monitoring
+  enable_profiling: false  # Only for development
+  profile_top_functions: 10
+  performance_log_interval_seconds: 300
+
+# System Monitoring & Health
+monitoring:
+  # Logging Configuration
+  log_level: "INFO"
+  log_file_path: "logs/supertrader.log"
+  max_log_file_size_mb: 100
+  log_retention_days: 7
+  
+  # Performance Monitoring
+  enable_performance_tracking: true
+  latency_threshold_ms: 100.0
+  memory_threshold_mb: 500.0
+  
+  # Health Checks
+  health_check_frequency_seconds: 60
+  feature_generation_timeout_seconds: 30
+  
+  # Alerting
+  enable_alerts: true
+  alert_channels: ["log", "email"]
+
+# Market-specific Configuration
+market_params:
+  # NSE Index Futures
+  nifty:
+    lot_size: 50
+    tick_size: 0.05
+    margin_mis: 60000  # ₹60k for MIS
+    margin_nrml: 120000  # ₹120k for NRML
+    
+  banknifty:
+    lot_size: 25
+    tick_size: 0.05
+    margin_mis: 75000  # ₹75k for MIS
+    margin_nrml: 150000  # ₹150k for NRML
+    
+  finnifty:
+    lot_size: 40
+    tick_size: 0.05
+    margin_mis: 50000  # ₹50k for MIS
+    margin_nrml: 100000  # ₹100k for NRML
+
+# Environment-specific Overrides
+environments:
+  development:
+    phase4:
+      pcr_data_source: "mock"
+    data:
+      enable_data_caching: false
+    monitoring:
+      log_level: "DEBUG"
+      
+  production:
+    phase4:
+      pcr_data_source: "live"
+    data:
+      enable_data_caching: true
+    monitoring:
+      log_level: "INFO"
+      enable_alerts: true
+      
+  backtesting:
+    phase4:
+      pcr_data_source: "historical"
+      multi_timeframe_analysis: false  # Not needed for backtesting
+    trading:
+      position_sizing_method: "fixed"
+    data:
+      enable_data_caching: false
