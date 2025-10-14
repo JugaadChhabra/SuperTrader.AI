@@ -1,0 +1,317 @@
+# SuperTrader.AI Risk Management Configuration
+# Comprehensive risk limits for NSE Index Futures trading
+# Version: 1.0
+# Last Updated: 2024-10-13
+
+version: "1.0"
+last_updated: "2024-10-13"
+description: "Production risk management configuration for NSE Index Futures"
+
+# Global Portfolio Risk Limits
+global_limits:
+  # Maximum portfolio leverage across all positions
+  max_portfolio_leverage: 6.0
+  
+  # Drawdown limits
+  max_daily_drawdown_pct: 2.0         # 2% daily drawdown limit (hard stop)
+  max_weekly_drawdown_pct: 5.0        # 5% weekly drawdown limit
+  max_monthly_drawdown_pct: 8.0       # 8% monthly drawdown limit
+  max_annual_drawdown_pct: 15.0       # 15% annual drawdown limit
+  
+  # Value at Risk limits
+  max_var_95_pct: 3.0                 # 95% Value at Risk limit (% of capital)
+  max_var_99_pct: 5.0                 # 99% Value at Risk limit (% of capital)
+  
+  # Capital allocation limits
+  max_single_position_pct: 25.0       # Max 25% capital in single position
+  max_sector_exposure_pct: 40.0       # Max 40% in single sector (if applicable)
+  
+  # Trading frequency controls
+  max_trades_per_day: 50              # Maximum trades per day
+  max_trades_per_hour: 10             # Maximum trades per hour
+  min_time_between_trades_seconds: 30  # Minimum 30 seconds between trades
+
+# Index-Specific Risk Limits
+index_limits:
+  NIFTY:
+    # Exposure and position limits
+    max_exposure_pct: 30               # Max 30% of capital in NIFTY positions
+    max_leverage: 8.0                  # 8x leverage limit (most liquid)
+    max_lots_per_trade: 10             # Max 10 lots per single trade
+    max_daily_lots: 50                 # Max 50 lots per day (cumulative)
+    max_open_positions: 3              # Max 3 concurrent positions
+    
+    # Stop-loss and take-profit (in index points)
+    stop_loss_points: 50               # 50 points stop-loss
+    take_profit_points: 100            # 100 points take-profit (2:1 R:R)
+    trailing_stop_points: 30           # Trailing stop after 60 points profit
+    
+    # Time-based controls
+    max_holding_hours: 6               # Max 6 hours holding period (intraday)
+    position_decay_after_hours: 2      # Reduce position size after 2 hours
+    
+    # Volatility-based adjustments
+    volatility_multiplier: 1.0         # Base volatility multiplier
+    high_vol_threshold: 0.20           # Reduce positions if vol > 20%
+    low_vol_threshold: 0.10            # Increase positions if vol < 10%
+    
+  BANKNIFTY:
+    # More conservative limits due to higher volatility
+    max_exposure_pct: 25               # Max 25% of capital (lower than NIFTY)
+    max_leverage: 6.0                  # 6x leverage limit (more conservative)
+    max_lots_per_trade: 5              # Smaller position sizes
+    max_daily_lots: 25                 # Lower daily limit
+    max_open_positions: 2              # Max 2 concurrent positions
+    
+    # Wider stops due to higher volatility
+    stop_loss_points: 200              # 200 points stop-loss
+    take_profit_points: 400            # 400 points take-profit
+    trailing_stop_points: 150          # Trailing stop after 300 points profit
+    
+    # Tighter time controls
+    max_holding_hours: 4               # Max 4 hours (more volatile)
+    position_decay_after_hours: 1      # Reduce after 1 hour
+    
+    # Volatility adjustments
+    volatility_multiplier: 0.8         # 80% of normal size (higher base vol)
+    high_vol_threshold: 0.30           # Reduce if vol > 30%
+    low_vol_threshold: 0.20            # Increase if vol < 20%
+    
+  FINNIFTY:
+    # Moderate risk profile
+    max_exposure_pct: 20               # Conservative 20% exposure
+    max_leverage: 7.0                  # 7x leverage limit
+    max_lots_per_trade: 8              # Moderate position sizes
+    max_daily_lots: 40                 # Moderate daily limit
+    max_open_positions: 3              # Max 3 positions
+    
+    stop_loss_points: 100              # 100 points stop-loss
+    take_profit_points: 200            # 200 points take-profit
+    trailing_stop_points: 75           # Trailing stop after 150 points
+    
+    max_holding_hours: 5               # 5 hours max holding
+    position_decay_after_hours: 2      # Standard decay
+    
+    volatility_multiplier: 0.9         # 90% of normal size
+    high_vol_threshold: 0.25           # Reduce if vol > 25%
+    low_vol_threshold: 0.15            # Increase if vol < 15%
+
+# Position Sizing Parameters
+position_sizing:
+  # Oxford methodology parameters
+  volatility_target: 0.12              # 12% annual volatility target
+  vol_lookback_days: 64                # 64-day lookback for volatility calculation
+  vol_decay_factor: 0.94               # EWMA decay factor (64-day half-life)
+  vol_method: "ewma"                   # ewma, yang_zhang, parkinson, simple
+  
+  # Position size constraints
+  min_position_value: 100000           # Minimum ₹1 lakh position
+  max_position_value: 2000000          # Maximum ₹20 lakh per position
+  min_lots_per_trade: 1                # Minimum 1 lot
+  
+  # Signal strength requirements
+  min_signal_threshold: 0.30           # Minimum 0.3/1.0 signal strength
+  max_signal_threshold: 0.95           # Cap signal at 0.95 (leave room for error)
+  
+  # Volatility regime adjustments
+  low_vol_multiplier: 1.2              # Increase size by 20% in low vol
+  high_vol_multiplier: 0.7             # Reduce size by 30% in high vol
+  extreme_vol_multiplier: 0.5          # Reduce size by 50% in extreme vol
+
+# Kelly Criterion and Signal Scaling
+kelly_parameters:
+  # Kelly fraction limits (conservative for leveraged futures)
+  max_kelly_fraction: 0.25             # Cap at 25% of full Kelly
+  min_kelly_fraction: 0.05             # Minimum 5% position size
+  
+  # Performance requirements for Kelly calculation
+  min_win_rate_threshold: 0.55         # Minimum 55% win rate required
+  min_profit_factor_threshold: 1.3     # Minimum 1.3 profit factor
+  lookback_trades: 100                 # Use last 100 trades for calculation
+  
+  # Signal confidence adjustments
+  high_confidence_multiplier: 1.1     # 10% larger for high confidence signals
+  low_confidence_multiplier: 0.8      # 20% smaller for low confidence signals
+  confidence_threshold: 0.75           # Above 75% = high confidence
+
+# Margin Management
+margin_management:
+  # Margin utilization limits
+  max_margin_utilization: 0.60         # Use maximum 60% of available margin
+  target_margin_utilization: 0.40      # Target 40% utilization
+  margin_buffer: 0.15                  # Keep 15% buffer for mark-to-market
+  
+  # Emergency controls
+  emergency_liquidation_threshold: 0.90 # Emergency exit at 90% margin usage
+  warning_threshold: 0.75              # Warning at 75% margin usage
+  
+  # Margin call simulation
+  stress_test_multiplier: 1.5          # Test with 1.5x normal margin requirements
+  adverse_move_simulation: 0.03        # Simulate 3% adverse move
+  
+  # Overnight margin (NRML)
+  overnight_margin_multiplier: 2.0     # NRML margin ~2x MIS margin
+  max_overnight_positions: 2           # Maximum overnight positions
+
+# Correlation Risk Management
+correlation_limits:
+  # Index correlation controls
+  max_nifty_banknifty_combined: 0.45   # Max 45% combined NIFTY+BANKNIFTY exposure
+  max_correlation_threshold: 0.80      # Reduce positions if correlation >80%
+  correlation_lookback_days: 30        # 30-day correlation calculation
+  
+  # Correlation monitoring
+  correlation_check_frequency: 300     # Check every 5 minutes
+  high_correlation_action: "reduce"    # reduce, hold, exit
+  correlation_reduction_factor: 0.7    # Reduce by 30% when correlation high
+  
+  # Sector correlation (if trading sectoral indices)
+  max_financial_sector_exposure: 0.35  # Max 35% in financial sector indices
+  max_it_sector_exposure: 0.25         # Max 25% in IT sector indices
+
+# Time-Based Risk Controls
+time_based_controls:
+  # Market hours (IST)
+  market_open_time: "09:15"
+  market_close_time: "15:30"
+  
+  # Trading windows
+  no_trade_start_time: "09:15"         # No trades first 15 minutes
+  no_trade_end_time: "09:30"
+  
+  # Position management times
+  position_review_time: "14:00"        # Review all positions at 2:00 PM
+  square_off_warning_time: "15:10"     # Warning at 3:10 PM
+  forced_square_off_time: "15:20"      # Force square off at 3:20 PM
+  
+  # Expiry-related controls
+  expiry_prohibition_days: 2           # No new positions 2 days before expiry
+  rollover_start_days: 5               # Start rolling positions 5 days before expiry
+  
+  # Weekend and holiday controls
+  max_friday_positions: 1              # Max 1 position going into weekend
+  pre_holiday_reduction: 0.5           # Reduce positions by 50% before holidays
+
+# Circuit Breaker Controls
+circuit_breakers:
+  # Loss-based circuit breakers
+  daily_loss_limit_amount: 50000       # Hard stop at ₹50k daily loss
+  hourly_loss_limit_amount: 20000      # Stop at ₹20k hourly loss
+  
+  # Consecutive loss controls
+  consecutive_loss_limit: 5            # Stop after 5 consecutive losses
+  consecutive_loss_amount: 25000       # Or ₹25k in consecutive losses
+  
+  # Volatility spike controls
+  volatility_spike_threshold: 2.0      # Reduce positions if vol spikes 2x
+  volatility_spike_action: "reduce_50" # Reduce positions by 50%
+  
+  # Market disruption controls
+  market_halt_action: "liquidate_all"  # Action during market halt
+  news_event_pause_minutes: 30         # Pause trading 30min after major news
+  
+  # System performance controls
+  latency_threshold_ms: 1000           # Stop trading if latency >1 second
+  data_quality_threshold: 0.95         # Stop if data quality <95%
+
+# Emergency Procedures
+emergency_procedures:
+  # Panic button settings
+  emergency_liquidation_method: "market" # market, limit, best_effort
+  liquidation_time_limit_seconds: 300    # Complete within 5 minutes
+  
+  # Communication settings
+  emergency_notification_enabled: true
+  emergency_email_recipients:
+    - "risk@supertrader.ai"
+    - "trading@supertrader.ai"
+  
+  # System shutdown triggers
+  critical_error_shutdown: true
+  max_system_drawdown_shutdown: 0.10   # Shutdown at 10% system drawdown
+  
+  # Recovery procedures
+  auto_restart_after_shutdown: false
+  manual_approval_required: true
+  cooling_off_period_minutes: 60
+
+# Monitoring and Alerting
+monitoring:
+  # Real-time monitoring
+  position_monitoring_frequency: 30    # Monitor positions every 30 seconds
+  risk_calculation_frequency: 60       # Recalculate risk every minute
+  
+  # Alert thresholds
+  position_size_alert_threshold: 0.15  # Alert if position >15% of capital
+  leverage_alert_threshold: 5.0        # Alert if leverage >5x
+  drawdown_alert_threshold: 0.015      # Alert at 1.5% drawdown
+  
+  # Performance monitoring
+  sharpe_ratio_alert_threshold: 1.0    # Alert if Sharpe <1.0 over 30 days
+  win_rate_alert_threshold: 0.50       # Alert if win rate <50%
+  
+  # System health monitoring
+  memory_usage_alert_threshold: 0.80   # Alert at 80% memory usage
+  cpu_usage_alert_threshold: 0.75      # Alert at 75% CPU usage
+
+# Backtesting and Validation
+backtesting:
+  # Historical validation period
+  min_backtest_days: 252               # Minimum 1 year of data
+  validation_start_date: "2023-01-01"
+  validation_end_date: "2024-09-30"
+  
+  # Performance requirements
+  min_sharpe_ratio: 1.5                # Minimum Sharpe ratio in backtest
+  max_drawdown_tolerance: 0.12         # Maximum 12% drawdown in backtest
+  min_win_rate: 0.52                   # Minimum 52% win rate
+  
+  # Stress testing
+  stress_test_scenarios:
+    - name: "march_2020_crash"
+      volatility_multiplier: 3.0
+      correlation_multiplier: 1.5
+    - name: "high_volatility_regime"
+      volatility_multiplier: 2.0
+      reduced_liquidity: 0.5
+    - name: "interest_rate_shock"
+      basis_shock_points: 50
+      volatility_multiplier: 1.5
+
+# Contract Specifications (for reference)
+contract_specs:
+  NIFTY:
+    lot_size: 50
+    tick_size: 0.05
+    base_margin_mis: 60000            # Approximate MIS margin per lot
+    base_margin_nrml: 100000          # Approximate NRML margin per lot
+    
+  BANKNIFTY:
+    lot_size: 25
+    tick_size: 0.05
+    base_margin_mis: 75000
+    base_margin_nrml: 150000
+    
+  FINNIFTY:
+    lot_size: 40
+    tick_size: 0.05
+    base_margin_mis: 50000
+    base_margin_nrml: 80000
+
+# Compliance and Regulatory
+compliance:
+  # SEBI guidelines compliance
+  sebi_position_limits_enabled: true
+  
+  # Audit trail requirements
+  trade_logging_enabled: true
+  risk_decision_logging: true
+  
+  # Reporting requirements
+  daily_risk_report: true
+  weekly_performance_report: true
+  monthly_compliance_report: true
+  
+  # Record retention
+  trade_data_retention_days: 2555     # 7 years
+  risk_data_retention_days: 1095      # 3 years
