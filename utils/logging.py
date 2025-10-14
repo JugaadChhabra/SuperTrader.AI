@@ -23,3 +23,25 @@ class StructuredLogger:
 
             self.logger.addHandler(file_handler)
             self.logger.addHandler(console_handler)
+
+    
+    def _log(self,level,message,**metadata):
+        record={
+            "timestamp":datetime.utcnow().isoformat(),
+            "level":logging.getLevelName(level),
+            "message":message,
+            "metadata":metadata
+        }
+        self.logger.log(level,json.dumps(record,ensure_ascii=False))
+
+    def info(self,message,**metadata):
+        self._log(logging.INFO,message,**metadata)
+
+    def warning(self,message,**metadata):
+        self._log(logging.WARNING,message,**metadata)
+
+    def error(self,message,**metadata):
+        self._log(logging.ERROR,message,**metadata)
+
+    def critical(self,message,**metadata):
+        self._log(logging.CRITICAL,message,**metadata)
