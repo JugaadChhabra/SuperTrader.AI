@@ -1,139 +1,196 @@
 """
-Advanced Position Sizing - Oxford Methodology
-Comprehensive position sizing for NSE Index Futures with volatility targeting
+Volatility-Based Position Sizing System
+Implementation of Oxford paper formula with futures-specific considerations
 """
 
 import numpy as np
 import pandas as pd
-from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
-import logging
+from typing import Dict, List, Optional, Tuple, Any
+from dataclasses import dataclass
 import math
+import logging
+from utils.config import load_config
 
 logger = logging.getLogger(__name__)
 
+@dataclass
+class PositionSizingResult:
+    """Result of position sizing calculation"""
+    symbol: str
+    recommended_quantity: int  # In units (not lots)
+    recommended_lots: int      # In standard lots
+    notional_value: float      # Total notional exposure
+    risk_amount: float         # Amount at risk
+    volatility_target: float   # Target volatility used
+    actual_volatility: float   # Current realized volatility
+    vol_scaling_factor: float  # Volatility adjustment factor
+    rl_signal_strength: float  # RL signal (-1 to +1)
+    leverage_used: float       # Effective leverage
+    kelly_fraction: float      # Kelly criterion fraction
+    margin_required: float     # Estimated margin requirement
+    confidence_score: float    # Confidence in sizing (0-1)
+    warnings: List[str]        # Any sizing warnings
 
-def compute_position_size_oxford(
-    signal: float,
-    symbol: str,
-    market_data: Dict[str, Any],
-    portfolio: Dict[str, Any],
-    config: Dict[str, Any]
-) -> Dict[str, Any]:
+@dataclass
+class IndexVolatilityProfile:
+    """Volatility profile for each index"""
+    index_name: str
+    current_volatility: float     # Current realized volatility
+    long_term_volatility: float   # Long-term average volatility
+    volatility_regime: str        # 'low', 'normal', 'high', 'extreme'
+    vol_percentile: float         # Percentile in historical distribution
+    adjustment_factor: float      # Factor to adjust position size
+    confidence: float            # Confidence in volatility estimate
+
+
+class VolatilityPositionSizer:
     """
-    Advanced position sizing using Oxford volatility targeting methodology
+    Advanced position sizing using volatility targeting with futures-specific considerations
+    Based on Oxford paper methodology with enhancements for Indian futures
+    """
     
-    Formula: Position = (Target_Vol / Instrument_Vol) * Signal_Strength * Capital / Price
-    
-    Process:
-    1. Calculate instrument volatility (EWMA with 64-day half-life)
-    2. Apply volatility target (12% annual for futures)
-    3. Scale by RL signal strength (-1 to +1)
-    4. Apply futures leverage multiplier (5-10x based on index)
-    5. Account for margin requirements
-    6. Round to exchange lot sizes
-    7. Apply position and exposure caps
-    
-    Args:
-        signal: RL signal strength (-1.0 to +1.0)
-        symbol: Index symbol (NIFTY, BANKNIFTY, FINNIFTY)
-        market_data: Historical price data and current market info
-        portfolio: Current portfolio state
-        config: Risk and sizing configuration
+    def __init__(self, config_path: str = None):
+        """Initialize position sizer with configuration"""
+        self.config = load_config(config_path or "configs/risk.yaml")
+        self.position_config = self.config.get('position_sizing', {})
         
-    Returns:
-        {
-            'recommended_lots': int,
-            'position_value': float,
-            'leverage_used': float,
-            'margin_required': float,
-            'volatility_estimate': float,
-            'sizing_breakdown': Dict,
-            'risk_metrics': Dict
+        # Index-specific configurations with Indian futures specifications
+        self.index_configs = {
+            'NIFTY': {
+                'lot_size': 75,
+                'tick_size': 0.05,
+                'typical_volatility': 0.15,
+                'vol_floor': 0.08,          # Minimum volatility assumption
+                'vol_ceiling': 0.40,        # Maximum volatility cap
+                'leverage_cap': 10,         # Max leverage for NIFTY
+                'liquidity_score': 1.0,     # Highest liquidity
+                'margin_multiplier': 0.10,  # ~10% margin requirement
+                'contract_multiplier': 1    # Standard multiplier
+            },
+            'BANKNIFTY': {
+                'lot_size': 15,
+                'tick_size': 0.05,
+                'typical_volatility': 0.25,
+                'vol_floor': 0.12,
+                'vol_ceiling': 0.60,
+                'leverage_cap': 8,          # Slightly lower due to higher volatility
+                'liquidity_score': 0.95,    # Very high liquidity
+                'margin_multiplier': 0.12,  # Higher margin due to volatility
+                'contract_multiplier': 1
+            },
+            'FINNIFTY': {
+                'lot_size': 25,
+                'tick_size': 0.05,
+                'typical_volatility': 0.20,
+                'vol_floor': 0.10,
+                'vol_ceiling': 0.50,
+                'leverage_cap': 8,
+                'liquidity_score': 0.85,    # Good liquidity
+                'margin_multiplier': 0.11,
+                'contract_multiplier': 1
+            }
         }
-    """
-    logger.debug(f"Computing Oxford position size for {symbol}, signal: {signal:.3f}")
+        
+        # Position sizing parameters
+        self.base_volatility_target = self.position_config.get('base_volatility_target', 0.20)
+        self.max_kelly_fraction = self.position_config.get('max_kelly_fraction', 0.25)
+        self.min_kelly_fraction = self.position_config.get('min_kelly_fraction', 0.02)
+        self.confidence_threshold = self.position_config.get('confidence_threshold', 0.70)
+        
+        logger.info("Volatility position sizer initialized")
     
-    if abs(signal) < 0.1:  # Minimum signal threshold
-        return _create_zero_position_result("Signal too weak", signal)
-    
-    try:
-        # 1. Calculate instrument volatility
-        volatility_data = calculate_instrument_volatility(
-            market_data.get('price_data', pd.DataFrame()),
-            method=config.get('volatility_method', 'ewma'),
-            lookback_days=config.get('vol_lookback_days', 64)
-        )
+    def compute_position_size(
+        self,
+        symbol: str,
+        current_price: float,
+        rl_signal: float,  # -1 to +1
+        account_balance: float,
+        available_margin: float,
+        win_rate: float = 0.55,
+        avg_win_loss_ratio: float = 1.2,
+        current_positions: Dict[str, Any] = None,
+        market_data: Dict[str, Any] = None
+    ) -> PositionSizingResult:
+        """
+        Compute optimal position size using volatility targeting
         
-        if volatility_data['volatility'] <= 0:
-            return _create_zero_position_result("Invalid volatility calculation", signal)
-        
-        # 2. Get target volatility and capital
-        target_volatility = config.get('volatility_target', 0.12)  # 12% annual
-        total_capital = portfolio.get('total_capital', 500000)
-        available_capital = portfolio.get('available_capital', total_capital * 0.8)
-        
-        # 3. Calculate base position size using Oxford formula
-        base_position_value = _calculate_base_position_oxford(
-            target_volatility=target_volatility,
-            instrument_volatility=volatility_data['volatility'],
-            signal_strength=abs(signal),
-            available_capital=available_capital,
-            current_price=market_data.get('current_price', 0)
-        )
-        
-        if base_position_value <= 0:
-            return _create_zero_position_result("Base position calculation failed", signal)
-        
-        # 4. Apply futures leverage scaling
-        leverage_adjusted_value = apply_leverage_scaling(
-            base_position_value=base_position_value,
-            symbol=symbol,
-            config=config,
-            portfolio=portfolio
-        )
-        
-        # 5. Optimize for lot sizes and margin efficiency
-        lot_optimization = optimize_lot_sizing(
-            target_position_value=leverage_adjusted_value,
-            symbol=symbol,
-            signal=signal,
-            market_data=market_data,
-            config=config
-        )
-        
-        # 6. Apply risk limits and position caps
-        final_sizing = apply_position_caps(
-            lot_optimization=lot_optimization,
-            symbol=symbol,
-            portfolio=portfolio,
-            config=config
-        )
-        
-        # 7. Calculate final metrics
-        result = _compile_sizing_result(
-            final_sizing=final_sizing,
-            volatility_data=volatility_data,
-            signal=signal,
-            symbol=symbol,
-            config=config
-        )
-        
-        logger.info(f"Oxford sizing: {symbol} {result['recommended_lots']} lots, "
-                   f"₹{result['position_value']:,.0f}, {result['leverage_used']:.1f}x leverage")
-        
-        return result
-        
-    except Exception as e:
-        logger.error(f"Oxford position sizing failed for {symbol}: {str(e)}")
-        return _create_zero_position_result(f"Calculation error: {str(e)}", signal)
+        Args:
+            symbol: Futures symbol (e.g., 'NIFTY25OCT')
+            current_price: Current price of the instrument
+            rl_signal: RL strategy signal strength (-1 to +1)
+            account_balance: Total account balance
+            available_margin: Available margin for new positions
+            win_rate: Historical win rate (0-1)
+            avg_win_loss_ratio: Average win/loss ratio
+            current_positions: Current portfolio positions
+            market_data: Additional market data for volatility calculation
+            
+        Returns:
+            PositionSizingResult with recommended position size
+        """
+        try:
+            # Extract index information
+            index_name = self._extract_index_name(symbol)
+            index_config = self.index_configs.get(index_name, self.index_configs['NIFTY'])
+            
+            warnings = []
+            
+            # 1. Calculate current volatility
+            vol_profile = self._calculate_volatility_profile(symbol, current_price, market_data)
+            
+            # 2. Calculate Kelly fraction
+            kelly_fraction = self._calculate_kelly_fraction(win_rate, avg_win_loss_ratio)
+            
+            # 3. Apply volatility scaling (Oxford paper methodology)
+            vol_scaling_factor = self._calculate_volatility_scaling(vol_profile, index_config)
+            
+            # 4. Apply RL signal scaling
+            signal_scaling = abs(rl_signal)  # Use absolute value for position size
+            
+            # 5. Calculate base position size
+            base_position_value = account_balance * kelly_fraction * signal_scaling * vol_scaling_factor
+            
+            # 6. Apply futures-specific adjustments
+            adjusted_position_value = self._apply_futures_adjustments(
+                base_position_value, index_config, available_margin, warnings
+            )
+            
+            # 7. Convert to lots and handle lot size constraints
+            quantity, lots, notional_value = self._convert_to_lots(
+                adjusted_position_value, current_price, index_config
+            )
+            
+            # 8. Final validations and risk checks
+            final_result = self._validate_and_finalize(
+                symbol=symbol,
+                quantity=quantity,
+                lots=lots,
+                current_price=current_price,
+                notional_value=notional_value,
+                account_balance=account_balance,
+                available_margin=available_margin,
+                vol_profile=vol_profile,
+                kelly_fraction=kelly_fraction,
+                vol_scaling_factor=vol_scaling_factor,
+                rl_signal=rl_signal,
+                index_config=index_config,
+                warnings=warnings
+            )
+            
+            return final_result
+            
+        except Exception as e:
+            logger.error(f"Error in position sizing for {symbol}: {e}")
+            return self._create_error_result(symbol, str(e))
 
 
-def calculate_instrument_volatility(
-    price_data: pd.DataFrame,
-    method: str = 'ewma',
-    lookback_days: int = 64
-) -> Dict[str, float]:
+    def _calculate_volatility_profile(
+        self, 
+        symbol: str, 
+        current_price: float, 
+        market_data: Dict[str, Any] = None
+    ) -> IndexVolatilityProfile:
     """
     Calculate annualized volatility for position sizing
     

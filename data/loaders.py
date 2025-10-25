@@ -25,8 +25,13 @@ import csv
 import hashlib
 import json
 import os
+import sys
 from datetime import datetime, timezone, timedelta, time
 from typing import List, Dict, Tuple
+
+# Add project root to Python path
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(project_root)
 
 # Third-party imports
 import numpy as np
@@ -46,9 +51,9 @@ stock_code: str = input("Enter Stock Symbol: ")
 print(f"Selected stock: {stock_code}")
 
 # Credentials - Replace with your actual keys
-secret_key: str | None = os.getenv("SECRET_KEY")
-appkey: str | None = os.getenv("APP_KEY") 
-session_key: str | None = os.getenv("API_SESSION_TOKEN")
+secret_key = os.getenv("SECRET_KEY")
+appkey = os.getenv("APP_KEY") 
+session_key = os.getenv("API_SESSION_TOKEN")
 
 # Debug: Check if environment variables are loaded
 print("Environment Variables Check:")
@@ -141,24 +146,47 @@ print("="*60)
 
 try:
     response_data = json.loads(response.text)
-    
+
     if "Success" in response_data and response_data["Success"]:
         historical_data = response_data["Success"]
+
+        print(f"Response data: (display suppressed, {len(historical_data)} records)")
         
+        # Debug: Print first record to see ALL available fields and values
+        if historical_data:
+            print("DEBUG: First API record (all fields):")
+            first_record = historical_data[0]
+            for key, value in first_record.items():
+                print(f"  {key}: '{value}' (type: {type(value)})")
+            print()
+
         initial_cleaned_data = []
-        
+        total_records = 0
+        missing_volume_count = 0
+
         for record in historical_data:
+            total_records += 1
             datetime_str = record.get("datetime", "")
             if datetime_str:
                 try:
                     dt_obj = datetime.strptime(datetime_str, "%Y-%m-%d %H:%M:%S")
-                    
+
+                    # keep only market hours
                     if not (time(9, 15) <= dt_obj.time() <= time(15, 30)):
                         continue
-                    
+
                     date_part = dt_obj.strftime("%Y-%m-%d")
                     time_part = dt_obj.strftime("%H:%M:%S")
-                    
+
+                                                            # Extract volume - for indices like NIFTY, API returns empty volume field
+                    # Set to 0 to indicate no volume data available for index
+                    api_volume = record.get('volume', '')
+                    if api_volume and api_volume.strip():
+                        volume_val = api_volume  # Use actual volume if provided
+                    else:
+                        volume_val = 0  # No volume data for indices
+                        missing_volume_count += 1
+
                     cleaned_record = {
                         'exchange_name': 'NSE',
                         'stock_code': stock_code,
@@ -168,28 +196,30 @@ try:
                         'high': record.get('high', ''),
                         'low': record.get('low', ''),
                         'close': record.get('close', ''),
-                        'volume': record.get('volume', '')
+                        'volume': volume_val
                     }
                     initial_cleaned_data.append(cleaned_record)
-                except:
+                except Exception:
+                    # skip malformed record but continue processing
                     continue
-        
+
         cleaned_data = validate_and_clean_data(initial_cleaned_data)
-        
+
         if cleaned_data:
             df = pd.DataFrame(cleaned_data)
             csv_filename = f'{stock_code}_historical_data_5min.csv'
             df.to_csv(csv_filename, index=False)
-            
+
             print(f"[SUCCESS] Clean data saved to '{csv_filename}'")
-            print(f"[INFO] Records processed: {len(cleaned_data)}")
+            print(f"[INFO] Records processed: {len(cleaned_data)} (raw fetched: {total_records})")
             print(f"[INFO] Date range: {df['date'].min()} to {df['date'].max()}")
-            
-            print("\n� Data Quality Report:")
-            
+            print(f"[INFO] Volume missing/coercion issues (approx): {missing_volume_count} / {total_records}")
+
+            print("\nData Quality Report:")
+
             print("\n🔍 Sample data (first 5 rows):")
             print(df[['exchange_name', 'stock_code', 'date', 'time', 'open', 'high', 'low', 'close', 'volume']].head().to_string(index=False))
-            
+
         else:
             print("[ERROR] No valid data remaining after cleaning")
 
