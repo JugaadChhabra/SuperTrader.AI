@@ -1,489 +1,391 @@
 """
-DQN Network - PRODUCTION
-Smaller, faster architecture optimized for intraday trading
-- 2-layer LSTM (32, 16) for <50ms inference
-- Double DQN + Dueling DQN
-- Target network with 500-step updates
+================================================================================================
+SIMPLIFIED DQN NETWORK - THE TRADING BRAIN
+================================================================================================
+
+This is the AI "brain" that learns to make trading decisions.
+
+WHAT IT DOES:
+- Takes in market data (prices, indicators, time-of-day)
+- Outputs 3 possible actions: BUY (long), SELL (short), or HOLD (stay flat)
+- Learns from experience using "Deep Q-Learning"
+
+ARCHITECTURE:
+  Input (market state) 
+    ↓
+  LSTM Layer 1 (32 units) - learns short-term patterns
+    ↓
+  LSTM Layer 2 (16 units) - learns longer-term patterns
+    ↓
+  Dense layers - combines patterns
+    ↓
+  Output (Q-values for 3 actions: Short, Hold, Long)
+
+WHY DUELING DQN?
+- Separates "how good is this state" from "which action is best"
+- More stable learning for trading
+================================================================================================
 """
 
-import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from typing import Dict, Tuple, Optional
+import numpy as np
+from typing import Dict, Tuple
 import logging
 
 logger = logging.getLogger(__name__)
 
 
-class DuelingDQN(nn.Module):
+# ==================== THE NEURAL NETWORK ====================
+
+class TradingBrain(nn.Module):
     """
-    Dueling DQN Architecture for intraday trading
-    Separates state value and action advantages
+    The neural network that makes trading decisions
+    
+    Think of it as a trader's brain that:
+    1. Looks at recent market data (last 30 minutes)
+    2. Processes patterns using LSTM (remembers sequences)
+    3. Decides: Should I go LONG, SHORT, or stay FLAT?
     """
     
-    def __init__(
-        self,
-        input_size: int,
-        hidden_size_1: int = 32,
-        hidden_size_2: int = 16,
-        action_space: int = 3,  # {-1, 0, 1}
-        dropout: float = 0.2
-    ):
-        super(DuelingDQN, self).__init__()
+    def __init__(self, input_features: int = 32):
+        """
+        Initialize the trading brain
         
-        self.input_size = input_size
-        self.hidden_size_1 = hidden_size_1
-        self.hidden_size_2 = hidden_size_2
-        self.action_space = action_space
+        Args:
+            input_features: Number of features per time step (default 32)
+                           e.g., price, RSI, MACD, volume, time-of-day, etc.
+        """
+        super(TradingBrain, self).__init__()
         
-        # LSTM layers (smaller for faster inference)
+        # === LAYER 1: First LSTM - Catches short-term patterns ===
+        # Example: "Price has been rising for 5 minutes"
         self.lstm1 = nn.LSTM(
-            input_size=input_size,
-            hidden_size=hidden_size_1,
+            input_size=input_features,
+            hidden_size=32,
             batch_first=True,
-            dropout=dropout if hidden_size_2 > 0 else 0
+            dropout=0.2
         )
         
+        # === LAYER 2: Second LSTM - Catches longer patterns ===
+        # Example: "We're in an uptrend that started 20 minutes ago"
         self.lstm2 = nn.LSTM(
-            input_size=hidden_size_1,
-            hidden_size=hidden_size_2,
+            input_size=32,
+            hidden_size=16,
             batch_first=True
         )
         
-        # Dueling streams
-        # Value stream: V(s)
+        # === VALUE STREAM: "How good is the current situation?" ===
+        # Answers: "Is this a good time to have a position?"
         self.value_stream = nn.Sequential(
-            nn.Linear(hidden_size_2, 16),
+            nn.Linear(16, 16),
             nn.LeakyReLU(0.01),
-            nn.Dropout(dropout),
-            nn.Linear(16, 1)
+            nn.Dropout(0.2),
+            nn.Linear(16, 1)  # Single value: state goodness
         )
         
-        # Advantage stream: A(s, a)
+        # === ADVANTAGE STREAM: "Which action is best?" ===
+        # Answers: "Should I go long, short, or stay flat?"
         self.advantage_stream = nn.Sequential(
-            nn.Linear(hidden_size_2, 16),
+            nn.Linear(16, 16),
             nn.LeakyReLU(0.01),
-            nn.Dropout(dropout),
-            nn.Linear(16, action_space)
+            nn.Dropout(0.2),
+            nn.Linear(16, 3)  # 3 actions: Short (0), Hold (1), Long (2)
         )
         
-        logger.info(f"DuelingDQN initialized - Input: {input_size}, LSTM: [{hidden_size_1}, {hidden_size_2}], Actions: {action_space}")
+        logger.info("TradingBrain initialized ✓")
     
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, market_state: torch.Tensor) -> torch.Tensor:
         """
-        Forward pass
+        Think and decide on an action
         
         Args:
-            x: Input tensor (batch, lookback, features)
+            market_state: Recent market data
+                         Shape: (batch_size, lookback_period, features)
+                         Example: (32, 30, 32) = 32 samples, 30 time steps, 32 features
         
         Returns:
-            Q-values: (batch, action_space)
+            q_values: "Quality scores" for each action
+                     Shape: (batch_size, 3)
+                     Higher score = better action
         """
-        batch_size = x.size(0)
+        # Step 1: Process through LSTM layers
+        lstm1_output, _ = self.lstm1(market_state)
+        lstm2_output, (final_hidden, _) = self.lstm2(lstm1_output)
         
-        # LSTM layers
-        lstm1_out, _ = self.lstm1(x)
-        lstm2_out, (h_n, c_n) = self.lstm2(lstm1_out)
+        # Step 2: Take the final hidden state (most recent understanding)
+        brain_state = final_hidden[-1]  # Shape: (batch_size, 16)
         
-        # Take final hidden state
-        final_hidden = h_n[-1]  # (batch, hidden_size_2)
+        # Step 3: Calculate VALUE (how good is this situation?)
+        state_value = self.value_stream(brain_state)  # Shape: (batch_size, 1)
         
-        # Dueling streams
-        value = self.value_stream(final_hidden)  # (batch, 1)
-        advantages = self.advantage_stream(final_hidden)  # (batch, action_space)
+        # Step 4: Calculate ADVANTAGES (which action is best?)
+        action_advantages = self.advantage_stream(brain_state)  # Shape: (batch_size, 3)
         
-        # Combine: Q(s,a) = V(s) + (A(s,a) - mean(A(s,a)))
-        q_values = value + (advantages - advantages.mean(dim=1, keepdim=True))
+        # Step 5: Combine into Q-values
+        # Formula: Q(state, action) = V(state) + A(state, action) - mean(A)
+        # This is the "Dueling" part - separates value from action selection
+        q_values = state_value + (action_advantages - action_advantages.mean(dim=1, keepdim=True))
         
         return q_values
 
 
-class DoubleDQNAgent:
+# ==================== THE TRADING AGENT ====================
+
+class TradingAgent:
     """
-    Double DQN Agent with Experience Replay
-    Optimized for intraday trading
+    The complete trading agent that:
+    1. Uses the TradingBrain to make decisions
+    2. Learns from experience (replay buffer)
+    3. Manages exploration vs exploitation
     """
     
     def __init__(
         self,
-        state_shape: Tuple[int, int],  # (lookback, features)
-        action_space: int = 3,
+        num_features: int = 32,
+        lookback_period: int = 30,
         learning_rate: float = 0.0001,
-        gamma: float = 0.3,  # Shorter horizon for intraday
-        epsilon_start: float = 0.5,
-        epsilon_end: float = 0.01,
-        epsilon_decay: int = 100,
-        target_update_freq: int = 500,  # Faster updates for intraday
+        gamma: float = 0.3,  # Low gamma for intraday (short horizon)
+        epsilon_start: float = 0.5,  # Start with 50% random exploration
+        epsilon_end: float = 0.01,  # End with 1% random exploration
         device: str = 'cpu'
     ):
-        self.lookback, self.input_size = state_shape
-        self.action_space = action_space
+        """
+        Initialize the trading agent
+        
+        Args:
+            num_features: Number of input features (price, indicators, etc.)
+            lookback_period: How many time steps to look back (30 = 30 minutes)
+            learning_rate: How fast to learn (0.0001 = conservative)
+            gamma: Discount factor (0.3 = focus on immediate rewards, good for intraday)
+            epsilon_start: Initial exploration rate (0.5 = 50% random at start)
+            epsilon_end: Final exploration rate (0.01 = 1% random after training)
+            device: 'cpu' or 'cuda' (GPU)
+        """
+        self.device = torch.device(device)
+        
+        # === Create TWO brains ===
+        # Why two? One learns fast (main), one provides stable targets (target)
+        
+        # MAIN BRAIN: Updates every step, learns actively
+        self.main_brain = TradingBrain(input_features=num_features).to(self.device)
+        
+        # TARGET BRAIN: Updates slowly, provides stable learning targets
+        self.target_brain = TradingBrain(input_features=num_features).to(self.device)
+        self.target_brain.load_state_dict(self.main_brain.state_dict())
+        self.target_brain.eval()  # Always in evaluation mode
+        
+        # === Learning parameters ===
+        self.optimizer = torch.optim.Adam(self.main_brain.parameters(), lr=learning_rate)
         self.gamma = gamma
         self.epsilon = epsilon_start
         self.epsilon_end = epsilon_end
-        self.epsilon_decay = epsilon_decay
-        self.target_update_freq = target_update_freq
-        self.device = torch.device(device)
         
-        # Networks
-        self.q_network = DuelingDQN(
-            input_size=self.input_size,
-            action_space=action_space
-        ).to(self.device)
+        # === Experience storage ===
+        self.memory = []  # Stores past experiences for learning
+        self.memory_capacity = 5000  # Keep last 5000 experiences
         
-        self.target_network = DuelingDQN(
-            input_size=self.input_size,
-            action_space=action_space
-        ).to(self.device)
-        
-        # Copy weights to target network
-        self.target_network.load_state_dict(self.q_network.state_dict())
-        self.target_network.eval()
-        
-        # Optimizer
-        self.optimizer = torch.optim.Adam(self.q_network.parameters(), lr=learning_rate)
-        
-        # Training counters
+        # === Training counters ===
         self.steps = 0
-        self.episodes = 0
+        self.target_update_frequency = 500  # Update target brain every 500 steps
         
-        logger.info(f"DoubleDQNAgent initialized - Gamma: {gamma}, Epsilon: {epsilon_start}→{epsilon_end}")
+        logger.info(f"TradingAgent initialized | Gamma: {gamma} | Epsilon: {epsilon_start}→{epsilon_end}")
     
-    def select_action(
+    def decide_action(
+        self, 
+        market_state: np.ndarray, 
+        mode: str = 'train',
+        minutes_to_close: float = 180.0
+    ) -> Tuple[int, Dict]:
+        """
+        Decide what action to take
+        
+        Args:
+            market_state: Recent market data (lookback, features)
+            mode: 'train' (with exploration) or 'eval' (greedy only)
+            minutes_to_close: Minutes until market close (3:15 PM)
+        
+        Returns:
+            action: 0 (short), 1 (hold), or 2 (long)
+            info: Additional information (Q-values, epsilon, etc.)
+        """
+        # === SAFETY CHECK: Don't trade close to market close ===
+        if minutes_to_close < 15:
+            # Force HOLD action if less than 15 minutes to close
+            return 1, {'reason': 'time_constraint', 'q_values': [0, 1, 0]}
+        
+        # === EXPLORATION: Random action sometimes (helps learning) ===
+        if mode == 'train' and np.random.random() < self.epsilon:
+            action = np.random.randint(0, 3)  # Random: 0, 1, or 2
+            return action, {'mode': 'explore', 'epsilon': self.epsilon}
+        
+        # === EXPLOITATION: Use brain to pick best action ===
+        with torch.no_grad():
+            # Convert to tensor and add batch dimension
+            state_tensor = torch.FloatTensor(market_state).unsqueeze(0).to(self.device)
+            
+            # Get Q-values from brain
+            q_values = self.main_brain(state_tensor).cpu().numpy()[0]
+            
+            # Pick action with highest Q-value
+            action = int(np.argmax(q_values))
+        
+        return action, {'mode': 'exploit', 'q_values': q_values.tolist(), 'epsilon': self.epsilon}
+    
+    def remember(
         self,
         state: np.ndarray,
-        mode: str = 'train',
-        time_remaining: float = 180.0
-    ) -> Tuple[int, Dict[str, float]]:
+        action: int,
+        reward: float,
+        next_state: np.ndarray,
+        done: bool
+    ):
         """
-        Select action using epsilon-greedy policy
+        Store an experience in memory for later learning
         
-        Args:
-            state: State array (lookback, features)
-            mode: 'train' (with exploration) or 'eval' (greedy)
-            time_remaining: Minutes to market close
-        
-        Returns:
-            action: Integer action {0, 1, 2} → {-1, 0, 1}
-            metadata: Q-values and confidence
+        This is like the agent "journaling" its experiences:
+        "I saw this market state, took this action, got this reward"
         """
-        # Time-based constraints (no new positions after 3:00 PM)
-        if time_remaining < 15:
-            action = 1  # Hold (action index)
-            q_values = [0.0, 1.0, 0.0]
-            return action, {'q_values': q_values, 'epsilon': 0.0, 'mode': 'time_constrained'}
+        experience = {
+            'state': state,
+            'action': action,
+            'reward': reward,
+            'next_state': next_state,
+            'done': done
+        }
         
-        # Epsilon-greedy exploration
-        if mode == 'train' and np.random.random() < self.epsilon:
-            action = np.random.choice(self.action_space)
-            q_values = [0.0] * self.action_space
-            return action, {'q_values': q_values, 'epsilon': self.epsilon, 'mode': 'explore'}
-        
-        # Greedy action selection
-        with torch.no_grad():
-            state_tensor = torch.FloatTensor(state).unsqueeze(0).to(self.device)  # (1, lookback, features)
-            q_vals = self.q_network(state_tensor).cpu().numpy()[0]
-            action = int(np.argmax(q_vals))
-            q_values = q_vals.tolist()
-        
-        return action, {'q_values': q_values, 'epsilon': self.epsilon, 'mode': 'exploit'}
+        # Add to memory (with capacity limit)
+        if len(self.memory) < self.memory_capacity:
+            self.memory.append(experience)
+        else:
+            # Overwrite oldest experience
+            self.memory[self.steps % self.memory_capacity] = experience
     
-    def train_step(self, batch: Dict[str, np.ndarray]) -> Dict[str, float]:
+    def learn(self, batch_size: int = 32) -> Dict[str, float]:
         """
-        Perform one training step (Double DQN update)
+        Learn from past experiences (training step)
+        
+        This is where the magic happens:
+        1. Sample random experiences from memory
+        2. Calculate how "wrong" our predictions were
+        3. Update the brain to be less wrong next time
         
         Args:
-            batch: Dictionary with 'states', 'actions', 'rewards', 'next_states', 'dones'
+            batch_size: Number of experiences to learn from at once
         
         Returns:
-            metrics: Training metrics
+            metrics: Training metrics (loss, Q-values, etc.)
         """
-        # Convert batch to tensors
-        states = torch.FloatTensor(batch['states']).to(self.device)
-        actions = torch.LongTensor(batch['actions']).to(self.device)
-        rewards = torch.FloatTensor(batch['rewards']).to(self.device)
-        next_states = torch.FloatTensor(batch['next_states']).to(self.device)
-        dones = torch.FloatTensor(batch['dones']).to(self.device)
+        if len(self.memory) < batch_size:
+            return {}  # Not enough experiences yet
         
-        # Current Q-values
-        q_values = self.q_network(states)
-        q_value = q_values.gather(1, actions.unsqueeze(1)).squeeze(1)
+        # === STEP 1: Sample random experiences ===
+        indices = np.random.choice(len(self.memory), batch_size, replace=False)
+        experiences = [self.memory[i] for i in indices]
         
-        # Double DQN: Select action with online network, evaluate with target network
+        # === STEP 2: Convert to tensors ===
+        states = torch.FloatTensor(np.array([e['state'] for e in experiences])).to(self.device)
+        actions = torch.LongTensor([e['action'] for e in experiences]).to(self.device)
+        rewards = torch.FloatTensor([e['reward'] for e in experiences]).to(self.device)
+        next_states = torch.FloatTensor(np.array([e['next_state'] for e in experiences])).to(self.device)
+        dones = torch.FloatTensor([e['done'] for e in experiences]).to(self.device)
+        
+        # === STEP 3: Calculate current Q-values ===
+        current_q_values = self.main_brain(states)
+        current_q = current_q_values.gather(1, actions.unsqueeze(1)).squeeze()
+        
+        # === STEP 4: Calculate target Q-values (what we SHOULD have predicted) ===
         with torch.no_grad():
-            # Select best action using online network
-            next_q_online = self.q_network(next_states)
-            next_actions = next_q_online.argmax(dim=1)
+            # Double DQN: Select action with main brain, evaluate with target brain
+            next_q_main = self.main_brain(next_states)
+            next_actions = next_q_main.argmax(dim=1)
             
-            # Evaluate action using target network
-            next_q_target = self.target_network(next_states)
-            next_q_value = next_q_target.gather(1, next_actions.unsqueeze(1)).squeeze(1)
+            next_q_target = self.target_brain(next_states)
+            next_q = next_q_target.gather(1, next_actions.unsqueeze(1)).squeeze()
             
-            # TD target
-            target_q_value = rewards + (1 - dones) * self.gamma * next_q_value
+            # Target = reward + gamma * next_q (if not done)
+            target_q = rewards + (1 - dones) * self.gamma * next_q
         
-        # Loss (Huber loss for robustness)
-        loss = F.smooth_l1_loss(q_value, target_q_value)
+        # === STEP 5: Calculate loss (how wrong we were) ===
+        loss = nn.functional.smooth_l1_loss(current_q, target_q)
         
-        # Optimize
+        # === STEP 6: Update the brain ===
         self.optimizer.zero_grad()
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.q_network.parameters(), max_norm=10.0)
+        torch.nn.utils.clip_grad_norm_(self.main_brain.parameters(), max_norm=10.0)
         self.optimizer.step()
         
-        # Update counters
+        # === STEP 7: Update target brain periodically ===
         self.steps += 1
+        if self.steps % self.target_update_frequency == 0:
+            self.target_brain.load_state_dict(self.main_brain.state_dict())
+            logger.info(f"Target brain updated at step {self.steps}")
         
-        # Update target network
-        if self.steps % self.target_update_freq == 0:
-            self.target_network.load_state_dict(self.q_network.state_dict())
-            logger.info(f"Target network updated at step {self.steps}")
-        
-        # Decay epsilon
+        # === STEP 8: Decay exploration rate ===
         if self.epsilon > self.epsilon_end:
-            self.epsilon = max(
-                self.epsilon_end,
-                self.epsilon - (0.5 - self.epsilon_end) / self.epsilon_decay
-            )
+            self.epsilon = max(self.epsilon_end, self.epsilon * 0.995)
         
-        metrics = {
+        return {
             'loss': loss.item(),
-            'q_mean': q_value.mean().item(),
-            'q_std': q_value.std().item(),
-            'reward_mean': rewards.mean().item(),
+            'q_mean': current_q.mean().item(),
             'epsilon': self.epsilon,
             'steps': self.steps
         }
-        
-        return metrics
     
-    def save_checkpoint(self, path: str, metrics: Dict[str, float]) -> None:
-        """Save model checkpoint"""
+    def save(self, filepath: str):
+        """Save the agent's brain to disk"""
         checkpoint = {
-            'q_network_state_dict': self.q_network.state_dict(),
-            'target_network_state_dict': self.target_network.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
+            'main_brain': self.main_brain.state_dict(),
+            'target_brain': self.target_brain.state_dict(),
+            'optimizer': self.optimizer.state_dict(),
             'epsilon': self.epsilon,
-            'steps': self.steps,
-            'episodes': self.episodes,
-            'metrics': metrics
+            'steps': self.steps
         }
-        torch.save(checkpoint, path)
-        logger.info(f"Checkpoint saved to {path}")
+        torch.save(checkpoint, filepath)
+        logger.info(f"Agent saved to {filepath}")
     
-    def load_checkpoint(self, path: str) -> Dict[str, float]:
-        """Load model checkpoint"""
-        checkpoint = torch.load(path, map_location=self.device)
-        self.q_network.load_state_dict(checkpoint['q_network_state_dict'])
-        self.target_network.load_state_dict(checkpoint['target_network_state_dict'])
-        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    def load(self, filepath: str):
+        """Load the agent's brain from disk"""
+        checkpoint = torch.load(filepath, map_location=self.device)
+        self.main_brain.load_state_dict(checkpoint['main_brain'])
+        self.target_brain.load_state_dict(checkpoint['target_brain'])
+        self.optimizer.load_state_dict(checkpoint['optimizer'])
         self.epsilon = checkpoint['epsilon']
         self.steps = checkpoint['steps']
-        self.episodes = checkpoint['episodes']
-        logger.info(f"Checkpoint loaded from {path}")
-        return checkpoint['metrics']
+        logger.info(f"Agent loaded from {filepath}")
 
 
-class ReplayBuffer:
-    """
-    Experience Replay Buffer for DQN
-    Stores transitions for training
-    """
-    
-    def __init__(self, capacity: int = 5000):
-        self.capacity = capacity
-        self.buffer = []
-        self.position = 0
-        logger.info(f"ReplayBuffer initialized - Capacity: {capacity}")
-    
-    def push(
-        self,
-        state: np.ndarray,
-        action: int,
-        reward: float,
-        next_state: np.ndarray,
-        done: bool,
-        time_of_day: Optional[float] = None
-    ) -> None:
-        """Add experience to buffer"""
-        
-        experience = {
-            'state': state,
-            'action': action,
-            'reward': reward,
-            'next_state': next_state,
-            'done': done,
-            'time_of_day': time_of_day
-        }
-        
-        if len(self.buffer) < self.capacity:
-            self.buffer.append(experience)
-        else:
-            self.buffer[self.position] = experience
-        
-        self.position = (self.position + 1) % self.capacity
-    
-    def sample(self, batch_size: int) -> Dict[str, np.ndarray]:
-        """Sample random batch"""
-        
-        if len(self.buffer) < batch_size:
-            batch_size = len(self.buffer)
-        
-        indices = np.random.choice(len(self.buffer), batch_size, replace=False)
-        batch_experiences = [self.buffer[i] for i in indices]
-        
-        batch = {
-            'states': np.array([exp['state'] for exp in batch_experiences]),
-            'actions': np.array([exp['action'] for exp in batch_experiences]),
-            'rewards': np.array([exp['reward'] for exp in batch_experiences]),
-            'next_states': np.array([exp['next_state'] for exp in batch_experiences]),
-            'dones': np.array([exp['done'] for exp in batch_experiences], dtype=np.float32)
-        }
-        
-        return batch
-    
-    def __len__(self) -> int:
-        return len(self.buffer)
+# ==================== QUICK START EXAMPLE ====================
 
-
-class PrioritizedReplayBuffer:
+if __name__ == "__main__":
     """
-    Prioritized Experience Replay Buffer
-    Samples important experiences more frequently
+    Quick example of how to use the TradingAgent
     """
     
-    def __init__(self, capacity: int = 5000, alpha: float = 0.6, beta: float = 0.4):
-        self.capacity = capacity
-        self.alpha = alpha  # Priority exponent
-        self.beta = beta  # Importance sampling exponent
-        self.buffer = []
-        self.priorities = np.zeros(capacity, dtype=np.float32)
-        self.position = 0
-        logger.info(f"PrioritizedReplayBuffer initialized - Capacity: {capacity}, Alpha: {alpha}")
-    
-    def push(
-        self,
-        state: np.ndarray,
-        action: int,
-        reward: float,
-        next_state: np.ndarray,
-        done: bool,
-        time_of_day: Optional[float] = None
-    ) -> None:
-        """Add experience with max priority"""
-        
-        max_priority = self.priorities.max() if self.buffer else 1.0
-        
-        experience = {
-            'state': state,
-            'action': action,
-            'reward': reward,
-            'next_state': next_state,
-            'done': done,
-            'time_of_day': time_of_day
-        }
-        
-        if len(self.buffer) < self.capacity:
-            self.buffer.append(experience)
-        else:
-            self.buffer[self.position] = experience
-        
-        self.priorities[self.position] = max_priority
-        self.position = (self.position + 1) % self.capacity
-    
-    def sample(self, batch_size: int) -> Tuple[Dict[str, np.ndarray], np.ndarray, np.ndarray]:
-        """Sample batch with priorities"""
-        
-        if len(self.buffer) < batch_size:
-            batch_size = len(self.buffer)
-        
-        # Calculate sampling probabilities
-        priorities = self.priorities[:len(self.buffer)]
-        probs = priorities ** self.alpha
-        probs /= probs.sum()
-        
-        # Sample indices
-        indices = np.random.choice(len(self.buffer), batch_size, p=probs, replace=False)
-        
-        # Get experiences
-        batch_experiences = [self.buffer[i] for i in indices]
-        
-        # Calculate importance sampling weights
-        total = len(self.buffer)
-        weights = (total * probs[indices]) ** (-self.beta)
-        weights /= weights.max()
-        
-        batch = {
-            'states': np.array([exp['state'] for exp in batch_experiences]),
-            'actions': np.array([exp['action'] for exp in batch_experiences]),
-            'rewards': np.array([exp['reward'] for exp in batch_experiences]),
-            'next_states': np.array([exp['next_state'] for exp in batch_experiences]),
-            'dones': np.array([exp['done'] for exp in batch_experiences], dtype=np.float32)
-        }
-        
-        return batch, indices, weights
-    
-    def update_priorities(self, indices: np.ndarray, priorities: np.ndarray) -> None:
-        """Update priorities for sampled experiences"""
-        for idx, priority in zip(indices, priorities):
-            self.priorities[idx] = priority
-    
-    def __len__(self) -> int:
-        return len(self.buffer)
-
-
-def create_dqn_agent(config: Dict[str, any]) -> DoubleDQNAgent:
-    """
-    Factory function to create DQN agent from config
-    """
-    state_shape = (
-        config.get('lookback', 30),
-        config.get('num_features', 32)
+    # Create agent
+    agent = TradingAgent(
+        num_features=32,
+        lookback_period=30,
+        learning_rate=0.0001,
+        gamma=0.3
     )
     
-    agent = DoubleDQNAgent(
-        state_shape=state_shape,
-        action_space=config.get('action_space', 3),
-        learning_rate=config.get('learning_rate', 0.0001),
-        gamma=config.get('gamma', 0.3),
-        epsilon_start=config.get('epsilon_start', 0.5),
-        epsilon_end=config.get('epsilon_end', 0.01),
-        epsilon_decay=config.get('epsilon_decay', 100),
-        target_update_freq=config.get('target_update_freq', 500),
-        device=config.get('device', 'cpu')
-    )
-    
-    return agent
-
-
-# ==================== PERFORMANCE OPTIMIZATION ====================
-
-def benchmark_inference_speed(agent: DoubleDQNAgent, num_runs: int = 100) -> float:
-    """
-    Benchmark model inference speed
-    Target: <50ms for intraday trading
-    """
-    import time
-    
-    # Create dummy state
+    # Simulate market state (30 time steps, 32 features each)
     dummy_state = np.random.randn(30, 32).astype(np.float32)
     
-    # Warmup
-    for _ in range(10):
-        agent.select_action(dummy_state, mode='eval')
+    # Decide action
+    action, info = agent.decide_action(dummy_state, mode='train', minutes_to_close=120)
     
-    # Benchmark
-    start_time = time.time()
-    for _ in range(num_runs):
-        agent.select_action(dummy_state, mode='eval')
-    elapsed_time = (time.time() - start_time) / num_runs * 1000  # ms
+    print(f"Decision: {'SHORT' if action == 0 else 'HOLD' if action == 1 else 'LONG'}")
+    print(f"Q-values: {info.get('q_values', [])}")
+    print(f"Mode: {info.get('mode', 'N/A')}")
     
-    logger.info(f"Inference speed: {elapsed_time:.2f}ms per prediction")
+    # Store experience
+    dummy_reward = 0.5
+    dummy_next_state = np.random.randn(30, 32).astype(np.float32)
+    agent.remember(dummy_state, action, dummy_reward, dummy_next_state, done=False)
     
-    if elapsed_time > 50:
-        logger.warning("⚠️ Inference too slow for intraday trading! Target: <50ms")
-    else:
-        logger.info(f"✅ Inference speed OK for intraday trading")
-    
-    return elapsed_time
+    # Learn (if enough experiences)
+    metrics = agent.learn(batch_size=32)
+    if metrics:
+        print(f"Training metrics: {metrics}")
