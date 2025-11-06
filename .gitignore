@@ -22,7 +22,7 @@ build/
 *.whl
 
 models/checkpoint
-models/*.pkl
+# models/*.pkl
 models/*.joblib
 models/tf_policy_weights.*
 
