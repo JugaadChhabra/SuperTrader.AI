@@ -21,6 +21,11 @@ dist/
 build/
 *.whl
 
+models/checkpoint
+models/*.pkl
+models/*.joblib
+models/tf_policy_weights.*
+
 # Installer logs
 pip-log.txt
 pip-delete-this-directory.txt

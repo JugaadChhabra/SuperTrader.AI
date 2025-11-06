@@ -44,8 +44,8 @@ from typing import Dict, List
 from tqdm import tqdm
 
 # Import our simplified components
-from simplified_dqn_network import TradingAgent
-from simplified_environment import IntradayMarket
+from dqn_network import TradingAgent
+from intraday_environment import IntradayMarket
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
