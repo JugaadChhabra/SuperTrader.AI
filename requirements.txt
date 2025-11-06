@@ -10,3 +10,4 @@ tensorflow
 TA-Lib
 matplotlib
 scikit-learn
+keras
