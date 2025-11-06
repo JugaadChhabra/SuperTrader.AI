@@ -47,6 +47,7 @@ MARKET_CLOSE_TIME = time(15, 30)
 REQUIRED_OHLCV_COLUMNS = ['open', 'high', 'low', 'close', 'volume']
 load_dotenv()
 
+# stock_code: str = "NIFTY"
 stock_code: str = input("Enter Stock Symbol: ")
 print(f"Selected stock: {stock_code}")
 
