@@ -22,7 +22,11 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
 from utils.risk_config import get_risk_config_manager, RiskMetrics, ViolationResult
-from agents.position_sizing import compute_position_size_oxford
+from agents.pre_trade_risk import validate_pre_trade_risk, is_order_approved, get_risk_summary
+from agents.volatility_position_sizing import calculate_position_size, get_recommended_lots, is_position_viable
+from agents.trade_ledger import get_trade_ledger, Trade, TradeAction, TradeStatus, ContractDetails
+from agents.universe_ranking import rank_indices_for_trading, get_top_k_indices, is_index_tradeable
+from utils.position_manager import get_position_manager
 
 logger = logging.getLogger(__name__)
 
@@ -31,13 +35,18 @@ def init_execution_agent(config: Dict[str, Any]) -> Dict[str, Any]:
     """Initialize Execution Agent with integrated risk management"""
     logger.info("Initializing Enhanced Execution Agent with Risk Management...")
     
-    # Initialize risk configuration manager
+    # Initialize core components
     try:
         risk_manager = get_risk_config_manager()
+        trade_ledger = get_trade_ledger()
+        position_manager = get_position_manager(trade_ledger)
+        
         logger.info("✅ Risk configuration manager initialized")
+        logger.info("✅ Trade ledger initialized")
+        logger.info("✅ Position manager initialized")
     except Exception as e:
-        logger.error(f"❌ Failed to initialize risk manager: {e}")
-        raise RuntimeError(f"Critical: Risk manager initialization failed: {e}")
+        logger.error(f"❌ Failed to initialize core components: {e}")
+        raise RuntimeError(f"Critical: Component initialization failed: {e}")
     
     agent = {
         'broker_connection': None,  # TODO: Connect to broker
@@ -45,6 +54,8 @@ def init_execution_agent(config: Dict[str, Any]) -> Dict[str, Any]:
         'trade_book': [],
         'config': config,
         'risk_manager': risk_manager,
+        'trade_ledger': trade_ledger,
+        'position_manager': position_manager,
         'current_metrics': RiskMetrics(),
         'daily_trade_count': 0,
         'consecutive_losses': 0,
@@ -538,6 +549,110 @@ def build_order(
     return order
 
 
+def select_trading_universe(
+    market_data: Dict[str, Dict[str, Any]],
+    max_selections: int = 5
+) -> Dict[str, Any]:
+    """
+    Select optimal trading universe using dynamic ranking
+    
+    Args:
+        market_data: Market data for all indices
+        max_selections: Maximum number of indices to select
+        
+    Returns:
+        Dictionary with selected indices and ranking details
+    """
+    try:
+        logger.info(f"🔍 Selecting trading universe from {len(market_data)} available indices")
+        
+        # Rank indices using comprehensive metrics
+        ranked_indices = rank_indices_for_trading(market_data, max_selections)
+        
+        if not ranked_indices:
+            logger.warning("⚠️ No indices passed selection criteria")
+            return {
+                'selected_indices': [],
+                'ranking_details': [],
+                'selection_summary': "No indices met selection criteria"
+            }
+        
+        # Extract selected symbols
+        selected_symbols = [metrics.symbol for metrics in ranked_indices]
+        
+        # Create detailed ranking info
+        ranking_details = []
+        for metrics in ranked_indices:
+            ranking_details.append({
+                'symbol': metrics.symbol,
+                'rank': metrics.rank,
+                'composite_score': metrics.composite_score,
+                'liquidity_score': metrics.liquidity_score,
+                'volatility_score': metrics.volatility_score,
+                'momentum_score': metrics.momentum_score,
+                'mean_reversion_score': metrics.mean_reversion_score,
+                'avg_daily_volume': metrics.avg_daily_volume,
+                'realized_volatility': metrics.realized_volatility,
+                'volatility_regime': metrics.volatility_regime.value,
+                'data_quality': metrics.data_quality
+            })
+        
+        # Create summary
+        selection_summary = f"Selected {len(selected_symbols)} indices: {', '.join(selected_symbols)}"
+        
+        logger.info(f"✅ Universe selection complete: {selection_summary}")
+        
+        return {
+            'selected_indices': selected_symbols,
+            'ranking_details': ranking_details,
+            'selection_summary': selection_summary,
+            'total_candidates': len(market_data),
+            'selected_count': len(selected_symbols)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in universe selection: {e}")
+        return {
+            'selected_indices': [],
+            'ranking_details': [],
+            'selection_summary': f"Error in selection: {str(e)}"
+        }
+
+
+def validate_index_for_trading(
+    symbol: str,
+    market_data: Dict[str, Any]
+) -> Dict[str, Any]:
+    """
+    Validate if a specific index is suitable for trading
+    
+    Args:
+        symbol: Index symbol to validate
+        market_data: Market data for the index
+        
+    Returns:
+        Validation result with recommendation
+    """
+    try:
+        is_tradeable = is_index_tradeable(symbol, market_data)
+        
+        return {
+            'symbol': symbol,
+            'is_tradeable': is_tradeable,
+            'recommendation': "APPROVED for trading" if is_tradeable else "NOT RECOMMENDED for trading",
+            'timestamp': datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error validating {symbol}: {e}")
+        return {
+            'symbol': symbol,
+            'is_tradeable': False,
+            'recommendation': f"Validation error: {str(e)}",
+            'timestamp': datetime.now().isoformat()
+        }
+
+
 def execute_smart_trade(
     signal: Dict[str, Any],
     symbol: str,
@@ -591,28 +706,80 @@ def execute_smart_trade(
             logger.error(f"🚨 Trading rejected: {result['rejection_reason']}")
             return result
         
-        # Step 2: Calculate optimal position size using Oxford methodology
-        position_sizing_result = compute_position_size_oxford(
-            signal=signal,
+        # Step 2: Validate index suitability for trading
+        logger.info("🎯 Validating index suitability for trading...")
+        index_validation = validate_index_for_trading(symbol, market_data)
+        
+        result['index_validation'] = index_validation
+        
+        if not index_validation['is_tradeable']:
+            result['status'] = 'rejected'
+            result['rejection_reason'] = f"Index not suitable for trading: {index_validation['recommendation']}"
+            logger.warning(f"❌ Index validation failed: {result['rejection_reason']}")
+            return result
+        
+        logger.info(f"✅ Index validation passed: {index_validation['recommendation']}")
+        
+        # Step 3: Comprehensive Pre-Trade Risk Validation
+        pre_trade_risk_report = validate_pre_trade_risk(
             symbol=symbol,
-            current_price=current_price,
-            portfolio=portfolio,
-            market_data=market_data,
-            risk_config=risk_manager.get_position_sizing_params(),
-            kelly_config=risk_manager.get_kelly_params()
+            side=signal['action'],
+            quantity=1000,  # Preliminary quantity for validation
+            price=current_price,
+            current_positions=portfolio.get('positions', {}),
+            available_margin=portfolio.get('available_margin', 500000),
+            account_balance=portfolio.get('total_capital', 1000000)
         )
         
-        result['position_sizing'] = position_sizing_result
+        result['pre_trade_risk'] = {
+            'overall_status': pre_trade_risk_report.overall_status.value,
+            'risk_score': pre_trade_risk_report.risk_score,
+            'passed_checks': pre_trade_risk_report.passed_checks,
+            'failed_checks': pre_trade_risk_report.failed_checks,
+            'warning_checks': pre_trade_risk_report.warning_checks,
+            'recommendation': pre_trade_risk_report.recommendation
+        }
         
-        if not position_sizing_result['success']:
+        if not is_order_approved(pre_trade_risk_report):
             result['status'] = 'rejected'
-            result['rejection_reason'] = f"Position sizing failed: {position_sizing_result.get('error', 'Unknown error')}"
+            result['rejection_reason'] = f"Pre-trade risk validation failed: {pre_trade_risk_report.recommendation}"
+            result['risk_summary'] = get_risk_summary(pre_trade_risk_report)
+            logger.error(f"❌ Pre-trade risk check failed: {result['rejection_reason']}")
+            return result
+        
+        logger.info(f"✅ Pre-trade risk validation passed: {pre_trade_risk_report.recommendation}")
+        
+        # Step 4: Calculate optimal position size using volatility targeting
+        # Enhanced position sizing using volatility targeting
+        position_sizing_result = calculate_position_size(
+            symbol=symbol,
+            current_price=current_price,
+            rl_signal=signal,
+            account_balance=portfolio.get('total_capital', 1000000),
+            available_margin=portfolio.get('available_margin', 500000),
+            win_rate=portfolio.get('win_rate', 0.55),
+            avg_win_loss_ratio=portfolio.get('avg_win_loss_ratio', 1.2),
+            current_positions=portfolio.get('positions', {}),
+            market_data=market_data
+        )
+        
+        result['position_sizing'] = {
+            'recommended_lots': position_sizing_result.recommended_lots,
+            'notional_value': position_sizing_result.notional_value,
+            'margin_required': position_sizing_result.margin_required,
+            'confidence_score': position_sizing_result.confidence_score,
+            'warnings': position_sizing_result.warnings
+        }
+        
+        if not is_position_viable(position_sizing_result):
+            result['status'] = 'rejected'
+            result['rejection_reason'] = f"Position not viable: {'; '.join(position_sizing_result.warnings)}"
             logger.error(f"❌ Position sizing failed: {result['rejection_reason']}")
             return result
         
         # Extract calculated position size
-        optimal_lots = position_sizing_result['result']['optimal_lots']
-        risk_adjusted_lots = position_sizing_result['result']['final_lots_after_caps']
+        optimal_lots = position_sizing_result.recommended_lots
+        risk_adjusted_lots = position_sizing_result.recommended_lots
         
         if risk_adjusted_lots <= 0:
             result['status'] = 'rejected'
@@ -676,7 +843,59 @@ def execute_smart_trade(
             logger.error(f"❌ Trade rejected: {result['rejection_reason']}")
             return result
         
-        # Step 7: Execute the trade
+        # Step 7: Create enhanced trade record with contract details
+        from agents.trade_ledger import ContractDetails
+        
+        # Create contract details for enhanced trade tracking
+        contract_details = ContractDetails(
+            symbol=symbol,
+            exchange='NFO',
+            contract_type='FUTURES',
+            lot_size=contract_spec['lot_size'],
+            tick_size=contract_spec['tick_size'],
+            margin_requirement={'NIFTY': 60000, 'BANKNIFTY': 75000, 'FINNIFTY': 40000}.get(symbol, 60000),
+            expiry_date=None,  # Would be populated with actual expiry
+            multiplier=1,
+            currency='INR'
+        )
+        
+        trade_record = Trade(
+            order_id=order['order_id'] if 'order_id' in order else f"ORDER_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+            symbol=symbol,
+            action=TradeAction.BUY if signal['action'] == 'BUY' else TradeAction.SELL,
+            strategy=signal.get('strategy', 'unknown'),
+            quantity_ordered=order['quantity'],
+            price_ordered=current_price,
+            confidence_score=signal.get('confidence', 0.0),
+            risk_score=pre_trade_risk_report.risk_score,
+            order_time=current_time,
+            contract_details=contract_details,  # Enhanced contract information
+            metadata={
+                'signal_data': signal,
+                'position_sizing_result': {
+                    'recommended_lots': position_sizing_result.recommended_lots,
+                    'notional_value': position_sizing_result.notional_value,
+                    'margin_required': position_sizing_result.margin_required,
+                    'confidence_score': position_sizing_result.confidence_score,
+                    'volatility_target': getattr(position_sizing_result, 'volatility_target', None),
+                    'kelly_fraction': getattr(position_sizing_result, 'kelly_fraction', None)
+                },
+                'pre_trade_risk': {
+                    'overall_status': pre_trade_risk_report.overall_status.value,
+                    'risk_score': pre_trade_risk_report.risk_score,
+                    'passed_checks': pre_trade_risk_report.passed_checks,
+                    'failed_checks': pre_trade_risk_report.failed_checks
+                },
+                'index_validation': index_validation,
+                'market_conditions': {
+                    'volatility': market_data.get('volatility', 0.0),
+                    'volume': market_data.get('volume', 0),
+                    'open_interest': market_data.get('open_interest', 0)
+                }
+            }
+        )
+        
+        # Step 8: Execute the trade
         execution_result = execute_trade_with_checks(
             signal, symbol, current_price, risk_adjusted_lots,
             portfolio, risk_limits, margin_available, contract_spec, current_time
@@ -684,20 +903,209 @@ def execute_smart_trade(
         
         result.update(execution_result)
         
-        # Step 8: Update agent state and metrics
+        # Step 9: Update trade record and ledger based on execution result
         if result['status'] == 'success':
-            _update_agent_metrics(agent, order, result, current_time)
+            # Update trade with execution details
+            trade_record.broker_order_id = result.get('broker_order_id', result.get('order_id', ''))
+            trade_record.status = TradeStatus.FILLED  # Assume immediate fill for now
+            trade_record.quantity_filled = order['quantity']
+            trade_record.price_filled = current_price  # Would be actual fill price from broker
+            trade_record.fill_time = current_time
+            trade_record.notional_value = abs(current_price * order['quantity'])
+            
+            # Calculate margin used (approximate)
+            margin_per_lot = {'NIFTY': 60000, 'BANKNIFTY': 75000, 'FINNIFTY': 40000}.get(symbol, 60000)
+            lot_size = contract_spec['lot_size']
+            lots = abs(order['quantity']) / lot_size
+            trade_record.margin_used = lots * margin_per_lot
+            
+            # Record trade in ledger
+            success = agent['trade_ledger'].record_trade(trade_record)
+            
+            if success:
+                logger.info(f"✅ Trade recorded in ledger: {trade_record.trade_id}")
+                
+                # Update position manager with current prices
+                agent['position_manager'].update_market_data({symbol: current_price})
+                
+                result['trade_id'] = trade_record.trade_id
+                result['ledger_recorded'] = True
+            else:
+                logger.error(f"❌ Failed to record trade in ledger")
+                result['ledger_recorded'] = False
+            
+            # Update agent state and metrics
+            _update_agent_metrics(agent, order, result, current_time, trade_record)
             logger.info(f"✅ Smart trade executed successfully: {result.get('order_id')}")
+            
+        elif result['status'] == 'rejected':
+            # Still record the rejected trade for analysis
+            trade_record.status = TradeStatus.REJECTED
+            trade_record.metadata['rejection_reason'] = result.get('rejection_reason', 'Unknown')
+            
+            # Record rejected trade (optional, for analysis)
+            agent['trade_ledger'].record_trade(trade_record)
+            result['trade_id'] = trade_record.trade_id
+            
+            logger.warning(f"⚠️ Trade rejected and recorded: {result.get('rejection_reason')}")
+            
         else:
             logger.error(f"❌ Smart trade execution failed: {result.get('message')}")
+        
+        # Step 10: Compile comprehensive execution report
+        result['execution_summary'] = {
+            'symbol': symbol,
+            'action': signal['action'],
+            'signal_confidence': signal.get('confidence', 0.0),
+            'strategy': signal.get('strategy', 'unknown'),
+            'current_price': current_price,
+            'recommended_lots': position_sizing_result.recommended_lots,
+            'notional_value': position_sizing_result.notional_value,
+            'margin_required': position_sizing_result.margin_required,
+            'risk_score': pre_trade_risk_report.risk_score,
+            'index_tradeable': index_validation['is_tradeable'],
+            'execution_time': current_time.isoformat(),
+            'total_checks_passed': len(pre_trade_risk_report.passed_checks),
+            'total_checks_failed': len(pre_trade_risk_report.failed_checks)
+        }
+        
+        # Add performance metrics for successful trades
+        if result['status'] == 'success':
+            result['performance_metrics'] = {
+                'trade_id': trade_record.trade_id,
+                'position_size_utilized': optimal_lots,
+                'margin_utilization': (trade_record.margin_used / portfolio.get('available_margin', 1)) * 100,
+                'risk_adjusted_confidence': signal.get('confidence', 0.0) * (1 - pre_trade_risk_report.risk_score),
+                'execution_latency_ms': (datetime.now() - current_time).total_seconds() * 1000
+            }
+        
+        logger.info(f"📊 Execution Summary: {result['execution_summary']}")
         
         return result
         
     except Exception as e:
         result['status'] = 'error'
         result['error'] = str(e)
+        result['execution_summary'] = {
+            'symbol': symbol,
+            'action': signal.get('action', 'unknown'),
+            'error_occurred': True,
+            'error_message': str(e),
+            'execution_time': current_time.isoformat() if current_time else datetime.now().isoformat()
+        }
         logger.error(f"💥 Smart trade execution error: {e}")
         return result
+
+
+def execute_universe_based_trading(
+    portfolio: Dict[str, Any],
+    agent: Dict[str, Any],
+    market_data: Dict[str, Dict[str, Any]],
+    max_positions: int = 3,
+    current_time: datetime = None
+) -> Dict[str, Any]:
+    """
+    Execute universe-based trading with dynamic index selection
+    
+    Args:
+        portfolio: Current portfolio state
+        agent: Agent configuration and state
+        market_data: Market data for all available indices
+        max_positions: Maximum concurrent positions
+        current_time: Current timestamp
+        
+    Returns:
+        Comprehensive trading results across selected universe
+    """
+    if current_time is None:
+        current_time = datetime.now()
+    
+    logger.info(f"🌐 Starting universe-based trading with {len(market_data)} available indices")
+    
+    # Step 1: Select optimal trading universe
+    universe_selection = select_trading_universe(market_data, max_positions)
+    
+    if not universe_selection['selected_indices']:
+        logger.warning("❌ No indices selected for trading")
+        return {
+            'status': 'no_trades',
+            'universe_selection': universe_selection,
+            'trades': [],
+            'timestamp': current_time.isoformat()
+        }
+    
+    # Step 2: Execute trades for selected indices
+    execution_results = []
+    
+    for symbol in universe_selection['selected_indices']:
+        try:
+            # Generate trading signal for this index
+            # (This would integrate with your RL strategy agent)
+            signal = {
+                'action': 'BUY',  # Placeholder - would come from RL agent
+                'confidence': 0.75,
+                'strategy': 'universe_based_rl'
+            }
+            
+            # Get current price and market data for this symbol
+            symbol_market_data = market_data.get(symbol, {})
+            current_price = symbol_market_data.get('price', 0.0)
+            
+            if current_price <= 0:
+                logger.warning(f"❌ Invalid price for {symbol}: {current_price}")
+                continue
+            
+            # Execute smart trade
+            trade_result = execute_smart_trade(
+                signal=signal,
+                symbol=symbol,
+                current_price=current_price,
+                portfolio=portfolio,
+                market_data=symbol_market_data,
+                agent=agent,
+                current_time=current_time
+            )
+            
+            trade_result['universe_rank'] = next(
+                (r['rank'] for r in universe_selection['ranking_details'] if r['symbol'] == symbol),
+                None
+            )
+            
+            execution_results.append(trade_result)
+            
+            logger.info(f"📈 Completed trade execution for {symbol}: {trade_result['status']}")
+            
+        except Exception as e:
+            logger.error(f"❌ Error executing trade for {symbol}: {e}")
+            execution_results.append({
+                'symbol': symbol,
+                'status': 'error',
+                'error': str(e),
+                'timestamp': current_time.isoformat()
+            })
+    
+    # Step 3: Compile comprehensive results
+    successful_trades = [t for t in execution_results if t['status'] == 'success']
+    rejected_trades = [t for t in execution_results if t['status'] == 'rejected']
+    failed_trades = [t for t in execution_results if t['status'] == 'error']
+    
+    summary = {
+        'total_attempted': len(execution_results),
+        'successful': len(successful_trades),
+        'rejected': len(rejected_trades),
+        'failed': len(failed_trades),
+        'success_rate': len(successful_trades) / max(len(execution_results), 1) * 100
+    }
+    
+    logger.info(f"🎯 Universe trading complete - {summary}")
+    
+    return {
+        'status': 'completed',
+        'universe_selection': universe_selection,
+        'trades': execution_results,
+        'summary': summary,
+        'timestamp': current_time.isoformat()
+    }
 
 
 def execute_trade_with_checks(
@@ -1136,7 +1544,7 @@ def _calculate_current_metrics(portfolio: Dict[str, Any], agent: Dict[str, Any],
         return RiskMetrics()
 
 
-def _update_agent_metrics(agent: Dict[str, Any], order: Dict[str, Any], result: Dict[str, Any], current_time: datetime) -> None:
+def _update_agent_metrics(agent: Dict[str, Any], order: Dict[str, Any], result: Dict[str, Any], current_time: datetime, trade_record: Trade = None) -> None:
     """
     Update agent state and performance metrics after trade execution
     
@@ -1158,9 +1566,10 @@ def _update_agent_metrics(agent: Dict[str, Any], order: Dict[str, Any], result: 
         trade_value = order['price'] * order['quantity']
         agent['performance_metrics']['total_volume'] += trade_value
         
-        # Log the trade for tracking
-        trade_record = {
+        # Log the trade for tracking (lightweight version for agent memory)
+        trade_summary = {
             'timestamp': current_time.isoformat(),
+            'trade_id': trade_record.trade_id if trade_record else None,
             'order_id': result.get('order_id'),
             'symbol': order['symbol'],
             'action': order['action'],
@@ -1168,10 +1577,11 @@ def _update_agent_metrics(agent: Dict[str, Any], order: Dict[str, Any], result: 
             'price': order['price'],
             'value': trade_value,
             'status': result['status'],
-            'risk_score': result.get('position_sizing', {}).get('result', {}).get('risk_score', 0.0)
+            'risk_score': result.get('position_sizing', {}).get('result', {}).get('risk_score', 0.0),
+            'ledger_recorded': result.get('ledger_recorded', False)
         }
         
-        agent['trade_book'].append(trade_record)
+        agent['trade_book'].append(trade_summary)
         
         # Keep only last 1000 trades in memory
         if len(agent['trade_book']) > 1000:
@@ -1284,3 +1694,199 @@ def modify_order(order_id: str, modifications: Dict[str, Any]) -> bool:
     # response = broker.modify_order(order_id, modifications)
     
     return True
+
+
+def handle_trade_fill_update(
+    agent: Dict[str, Any],
+    trade_id: str, 
+    filled_qty: int, 
+    fill_price: float, 
+    fill_time: datetime = None
+) -> bool:
+    """
+    Handle trade fill update from broker feed
+    
+    Args:
+        agent: Execution agent instance
+        trade_id: Trade ID to update
+        filled_qty: Quantity filled
+        fill_price: Actual fill price
+        fill_time: Fill timestamp
+        
+    Returns:
+        bool: Success status
+    """
+    try:
+        if fill_time is None:
+            fill_time = datetime.now()
+        
+        # Update trade in ledger
+        success = agent['trade_ledger'].update_trade_fill(
+            trade_id=trade_id,
+            filled_qty=filled_qty,
+            fill_price=fill_price,
+            fill_time=fill_time
+        )
+        
+        if success:
+            # Get updated position from ledger
+            trade = agent['trade_ledger'].trades.get(trade_id)
+            if trade:
+                # Update position manager with new price
+                agent['position_manager'].update_market_data({trade.symbol: fill_price})
+                
+                logger.info(f"✅ Trade fill processed: {trade_id} - {filled_qty} @ ₹{fill_price:.2f}")
+                return True
+        
+        logger.error(f"❌ Failed to process trade fill: {trade_id}")
+        return False
+        
+    except Exception as e:
+        logger.error(f"Error processing trade fill {trade_id}: {e}")
+        return False
+
+
+def get_portfolio_summary(agent: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Get comprehensive portfolio summary including positions and P&L
+    
+    Args:
+        agent: Execution agent instance
+        
+    Returns:
+        Dictionary with portfolio summary
+    """
+    try:
+        # Get position summary from position manager
+        position_summary = agent['position_manager'].get_position_summary()
+        
+        # Get performance summary from trade ledger
+        performance_summary = agent['trade_ledger'].get_performance_summary()
+        
+        # Get daily P&L
+        daily_pnl = agent['trade_ledger'].get_daily_pnl()
+        
+        # Get risk dashboard
+        risk_dashboard = agent['position_manager'].get_risk_dashboard()
+        
+        return {
+            'timestamp': datetime.now().isoformat(),
+            'positions': position_summary.get('positions', {}),
+            'portfolio_metrics': position_summary.get('portfolio_metrics', {}),
+            'performance': performance_summary,
+            'daily_pnl': daily_pnl,
+            'risk_metrics': risk_dashboard.get('portfolio_metrics', {}),
+            'active_alerts': risk_dashboard.get('position_alerts', {}),
+            'agent_metrics': {
+                'daily_trade_count': agent.get('daily_trade_count', 0),
+                'consecutive_losses': agent.get('consecutive_losses', 0),
+                'emergency_mode': agent.get('emergency_mode', False),
+                'total_trades_today': len([t for t in agent.get('trade_book', []) 
+                                         if datetime.fromisoformat(t['timestamp']).date() == datetime.now().date()])
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting portfolio summary: {e}")
+        return {'error': str(e)}
+
+
+def start_position_monitoring(agent: Dict[str, Any]) -> bool:
+    """
+    Start real-time position monitoring
+    
+    Args:
+        agent: Execution agent instance
+        
+    Returns:
+        bool: Success status
+    """
+    try:
+        # Register alert callback for position alerts
+        def position_alert_handler(alert_data: Dict[str, Any]) -> None:
+            """Handle position alerts from position manager"""
+            symbol = alert_data['symbol']
+            alert_type = alert_data['alert_type']
+            message = alert_data['message']
+            
+            logger.warning(f"🚨 POSITION ALERT [{alert_type.value}] {symbol}: {message}")
+            
+            # Handle specific alert types
+            if alert_type.value == 'STOP_LOSS':
+                # Trigger stop-loss exit
+                logger.critical(f"🛑 STOP LOSS HIT: {symbol} - {message}")
+                # Could automatically trigger position close here
+                
+            elif alert_type.value == 'PROFIT_TARGET':
+                # Log profit target hit
+                logger.info(f"🎯 PROFIT TARGET HIT: {symbol} - {message}")
+                
+            elif alert_type.value == 'MARGIN_WARNING':
+                # Handle margin warnings
+                logger.error(f"⚠️ MARGIN WARNING: {symbol} - {message}")
+        
+        # Register the alert handler
+        agent['position_manager'].register_alert_callback(position_alert_handler)
+        
+        # Start monitoring
+        agent['position_manager'].start_monitoring()
+        
+        logger.info("✅ Position monitoring started")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Failed to start position monitoring: {e}")
+        return False
+
+
+def stop_position_monitoring(agent: Dict[str, Any]) -> bool:
+    """
+    Stop position monitoring
+    
+    Args:
+        agent: Execution agent instance
+        
+    Returns:
+        bool: Success status
+    """
+    try:
+        agent['position_manager'].stop_monitoring()
+        logger.info("✅ Position monitoring stopped")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Failed to stop position monitoring: {e}")
+        return False
+
+
+def close_all_positions(agent: Dict[str, Any], reason: str = "End of day") -> List[Dict[str, Any]]:
+    """
+    Close all open positions
+    
+    Args:
+        agent: Execution agent instance
+        reason: Reason for closing positions
+        
+    Returns:
+        List of close orders
+    """
+    try:
+        positions = agent['trade_ledger'].get_all_positions(include_flat=False)
+        close_orders = []
+        
+        for position in positions:
+            if position.quantity != 0:
+                close_result = agent['position_manager'].close_position(
+                    symbol=position.symbol,
+                    reason=reason
+                )
+                
+                if close_result['status'] == 'success':
+                    close_orders.append(close_result['close_order'])
+        
+        logger.info(f"Generated {len(close_orders)} close orders for reason: {reason}")
+        return close_orders
+        
+    except Exception as e:
+        logger.error(f"Error closing all positions: {e}")
+        return []

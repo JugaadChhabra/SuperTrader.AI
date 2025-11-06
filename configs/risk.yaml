@@ -278,25 +278,153 @@ backtesting:
       basis_shock_points: 50
       volatility_multiplier: 1.5
 
-# Contract Specifications (for reference)
+# Updated Contract Specifications (October 2024)
 contract_specs:
   NIFTY:
-    lot_size: 50
+    lot_size: 75                      # Updated to current lot size
     tick_size: 0.05
-    base_margin_mis: 60000            # Approximate MIS margin per lot
-    base_margin_nrml: 100000          # Approximate NRML margin per lot
+    base_margin_mis: 75000            # Updated MIS margin per lot
+    base_margin_nrml: 125000          # Updated NRML margin per lot
+    stop_loss_points: 50              # Recommended stop-loss points
+    take_profit_points: 100           # Recommended take-profit points
     
   BANKNIFTY:
-    lot_size: 25
+    lot_size: 15                      # Updated to current lot size
     tick_size: 0.05
-    base_margin_mis: 75000
-    base_margin_nrml: 150000
+    base_margin_mis: 90000            # Updated MIS margin per lot
+    base_margin_nrml: 175000          # Updated NRML margin per lot
+    stop_loss_points: 200             # Recommended stop-loss points
+    take_profit_points: 400           # Recommended take-profit points
     
   FINNIFTY:
-    lot_size: 40
+    lot_size: 25                      # Updated lot size
     tick_size: 0.05
-    base_margin_mis: 50000
-    base_margin_nrml: 80000
+    base_margin_mis: 65000            # Updated MIS margin per lot
+    base_margin_nrml: 110000          # Updated NRML margin per lot
+    stop_loss_points: 100             # Recommended stop-loss points
+    take_profit_points: 200           # Recommended take-profit points
+
+# Enhanced Position Sizing Configuration
+enhanced_position_sizing:
+  # Oxford Paper Implementation
+  oxford_config:
+    base_volatility_target: 0.20      # 20% target portfolio volatility
+    volatility_method: "ewma"         # EWMA method for volatility calculation
+    volatility_lookback: 64           # 64-day lookback period
+    decay_factor: 0.94                # EWMA decay factor (64-day half-life)
+    
+  # Kelly Criterion Enhanced Settings
+  kelly_enhanced:
+    max_kelly_fraction: 0.25          # Maximum 25% Kelly
+    min_kelly_fraction: 0.02          # Minimum 2% Kelly
+    conservative_multiplier: 0.5      # Use 50% of Kelly for safety
+    win_rate_threshold: 0.45          # Minimum win rate for Kelly calc
+    profit_factor_threshold: 1.2      # Minimum profit factor
+    
+  # Volatility Regime Adjustments
+  volatility_regimes:
+    low_vol_threshold: 0.7            # <70% of typical = low vol
+    high_vol_threshold: 1.3           # >130% of typical = high vol
+    extreme_vol_threshold: 2.0        # >200% of typical = extreme vol
+    
+    # Position size multipliers by regime
+    low_vol_multiplier: 1.2           # 20% larger in low vol
+    normal_vol_multiplier: 1.0        # Normal sizing
+    high_vol_multiplier: 0.8          # 20% smaller in high vol
+    extreme_vol_multiplier: 0.5       # 50% smaller in extreme vol
+
+# Enhanced Fee Structure (NSE Index Futures - October 2024)
+enhanced_fee_structure:
+  brokerage:
+    flat_rate: 20                     # ₹20 per order
+    percentage_rate: 0.0003           # 0.03% whichever is lower
+    
+  stt:                                # Securities Transaction Tax
+    rate: 0.0001                      # 0.01% on sell side only
+    applicable_on: "sell"             # Only on sell transactions
+    
+  exchange_charges:
+    nse_rate: 0.0000345               # NSE F&O transaction charges
+    
+  clearing_charges:
+    rate: 0.0000055                   # Clearing corporation charges
+    
+  sebi_charges:
+    rate: 0.000001                    # SEBI turnover fees (₹1 per crore)
+    
+  gst:
+    rate: 0.18                        # 18% GST on all charges except STT
+    
+  stamp_duty:
+    rate: 0.00003                     # 0.003% on buy side
+    applicable_on: "buy"              # Only on buy transactions
+    
+  # Rollover cost estimation
+  rollover_costs:
+    basis_cost_estimate: 0.0005       # ~0.05% basis cost per rollover
+    frequency_months: 3               # Quarterly rollover
+    impact_cost: 0.0002               # Additional impact cost
+
+# Pre-Trade Risk Validation Enhanced
+pre_trade_validation:
+  # Index exposure checks
+  max_index_exposure: 0.30            # Maximum 30% per index
+  
+  # Margin adequacy checks
+  margin_buffer_requirement: 0.20     # 20% margin buffer
+  max_margin_utilization: 0.60       # 60% maximum margin usage
+  
+  # Position limit checks
+  exchange_position_limits:
+    NIFTY: 3600                       # SEBI prescribed limits (lots)
+    BANKNIFTY: 7200
+    FINNIFTY: 4800
+    default: 2400
+    
+  # Expiry proximity checks
+  min_days_to_expiry: 2               # No new positions 2 days before expiry
+  
+  # Correlation limits
+  max_correlation_exposure: 0.50      # 50% max in correlated assets
+  correlation_groups:
+    broad_market: ["NIFTY", "SENSEX"]
+    banking: ["BANKNIFTY", "FINNIFTY"]
+    sectoral: ["CNXPHARMA", "CNXIT", "CNXAUTO"]
+    
+  # Market hours validation
+  market_hours:
+    open_time: "09:15"
+    close_time: "15:30"
+    no_trade_zones:
+      - start: "09:15"
+        end: "09:30"                  # No trades in first 15 minutes
+      - start: "15:15"
+        end: "15:30"                  # Square off time
+        
+# Universe Selection and Ranking
+universe_ranking:
+  # Liquidity metrics
+  min_avg_daily_volume: 1000000       # Minimum average daily volume
+  min_open_interest: 500000           # Minimum open interest
+  
+  # Quality filters
+  max_bid_ask_spread_pct: 0.02        # Maximum 2% bid-ask spread
+  min_liquidity_score: 0.8            # Minimum liquidity score (0-1)
+  
+  # Volatility considerations
+  vol_regime_preference: "normal"      # Prefer normal volatility regime
+  max_volatility_threshold: 0.40      # Exclude if vol > 40%
+  
+  # Selection criteria
+  max_indices_selected: 5             # Select top 5 indices
+  rebalance_frequency: "daily"        # Daily universe rebalancing
+  
+  # Ranking factors and weights
+  ranking_factors:
+    liquidity_weight: 0.30            # 30% weight to liquidity
+    volatility_weight: 0.25           # 25% weight to volatility regime
+    momentum_weight: 0.25             # 25% weight to momentum
+    mean_reversion_weight: 0.20       # 20% weight to mean reversion
 
 # Compliance and Regulatory
 compliance:
