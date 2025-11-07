@@ -1,0 +1,17 @@
+{
+  "experiment_name": "migrated_training_20251108_031129",
+  "start_time": "2025-11-08T04:15:44.336386",
+  "start_episode": 1,
+  "total_episodes": 150,
+  "batch_size": 64,
+  "target_update_freq": 1000,
+  "save_freq": 10,
+  "agent_config": {
+    "gamma": 0.3,
+    "epsilon_start": 1.0,
+    "epsilon_end": 0.01,
+    "epsilon_decay_steps": 10000,
+    "learning_rate": 9.999999747378752e-05
+  },
+  "resumed_from": 110
+}

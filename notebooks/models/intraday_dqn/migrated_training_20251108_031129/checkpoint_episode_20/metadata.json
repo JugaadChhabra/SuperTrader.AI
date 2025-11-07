@@ -1,0 +1,7 @@
+{
+  "episode": 20,
+  "timestamp": "2025-11-08T04:26:25.332118",
+  "training_steps": 6557,
+  "epsilon": 0.3508570000000001,
+  "buffer_size": 5000
+}
