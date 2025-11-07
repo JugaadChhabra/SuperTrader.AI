@@ -1,18 +1,38 @@
 """
-Volatility-Based Position Sizing System
-Implementation of Oxford paper formula with futures-specific considerations
+DEPRECATED MODULE (position_sizing.py)
+
+This legacy implementation is retained only for backward compatibility.
+Use `agents.volatility_position_sizing` for all new sizing logic.
+This file will be removed after migration is complete.
 """
 
+import logging
+logger = logging.getLogger(__name__)
+
+# Compatibility imports for legacy code below (will be fully removed later)
+from dataclasses import dataclass
+from typing import Dict, List, Any, Tuple, Optional
 import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple, Any
-from dataclasses import dataclass
 import math
-import logging
 from utils.config import load_config
 
-logger = logging.getLogger(__name__)
+# Re-export public APIs from the new module for compatibility
+from agents.volatility_position_sizing import (
+    VolatilityPositionSizer,
+    PositionSizingResult,
+    calculate_position_size as volatility_calculate_position_size,
+    get_recommended_lots,
+    is_position_viable,
+)
+
+__all__ = [
+    "VolatilityPositionSizer",
+    "PositionSizingResult",
+    "volatility_calculate_position_size",
+    "get_recommended_lots",
+    "is_position_viable",
+]
 
 @dataclass
 class PositionSizingResult:

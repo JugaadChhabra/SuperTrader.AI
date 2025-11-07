@@ -1,298 +1,396 @@
-"""
-News/Sentiment Agent - PRODUCTION
-Day 1: Returns zeros (neutral sentiment)
-Future: Real-time sentiment from Twitter/Bloomberg/ET
+"""News/Sentiment Agent (simplified and efficient)
+
+This agent strictly fetches news from three allowed sources:
+- https://pulse.zerodha.com/
+- https://www.nseindia.com/
+- https://upstox.com/news/
+
+Features added/changed:
+- Robust, lazy-loaded HuggingFace pipeline that prefers Distil/finance models
+- Efficient fetching with requests.Session, retries, per-site limits and dedup
+- Strong preprocessing: emoji/ticker/url removal and deduplication
+- Ticker mapping using `stock_names_symbol.csv` for simple NER-like mapping
+- Rolling 5-minute aggregation using pandas
 """
 
 import logging
-from typing import Dict, List, Any, Optional
-from datetime import datetime
+from typing import Dict, List, Any, Optional, Tuple
+from datetime import datetime, timedelta
+import os
+import re
+import time
+
+import requests
+from requests.adapters import HTTPAdapter, Retry
+
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+# Optional BeautifulSoup
+try:
+    from bs4 import BeautifulSoup
+except Exception:  # pragma: no cover - optional dependency
+    BeautifulSoup = None
 
-def init_news_agent(config: Dict[str, Any], realtime_stream: bool = True) -> Dict[str, Any]:
-    """Initialize News/Sentiment Agent"""
-    logger.info(f"Initializing News Agent - Realtime: {realtime_stream}")
-    
-    agent = {
-        'realtime_stream': realtime_stream,
-        'sentiment_model': None,  # TODO: Load FinBERT or similar
-        'ner_model': None,  # TODO: Load NER for entity extraction
-        'sources': [],
-        'config': config,
-        'mode': 'mvp'  # Day 1: mvp, Later: 'production'
-    }
-    
-    logger.info("✅ News Agent initialized (MVP mode)")
-    return agent
+# Lazy singletons
+_SENTIMENT_PIPELINE = None
+_SENTIMENT_MODEL_NAME = None  # pinned model actually loaded
+_TICKER_MAP = None  # Dict[str, List[str]] keys: symbol->aliases (upper)
 
 
-def stream_live_news(sources: List[str]) -> List[Dict[str, Any]]:
-    """
-    Stream live news from sources
-    TODO: Implement WebSocket connections to:
-    - Twitter/X API
-    - Bloomberg Terminal
-    - Economic Times Live
-    - MoneyControl
-    """
-    logger.debug("Streaming live news (stub)")
-    return []
+def _create_session() -> requests.Session:
+    s = requests.Session()
+    retries = Retry(total=3, backoff_factor=0.3, status_forcelist=(500, 502, 503, 504))
+    s.mount("https://", HTTPAdapter(max_retries=retries))
+    s.headers.update({
+        "User-Agent": "Mozilla/5.0 (compatible; SuperTraderNews/1.0; +https://github.com)"
+    })
+    return s
 
 
-def fetch_pre_market_news() -> Dict[str, Any]:
-    """
-    Fetch pre-market news (9:00-9:15 AM)
-    Analyze overnight global cues
-    """
-    logger.info("Fetching pre-market news...")
-    
-    # TODO: Implement actual fetching
-    # - US market close (S&P, Nasdaq, Dow)
-    # - Asian markets (Nikkei, Hang Seng)
-    # - SGX Nifty (Singapore Nifty futures - leading indicator)
-    # - Crude oil, Gold prices
-    # - Dollar Index, USD/INR
-    # - Major news headlines
-    
-    pre_market_data = {
-        'us_markets': {
-            'sp500_change_pct': 0.0,
-            'nasdaq_change_pct': 0.0,
-            'dow_change_pct': 0.0,
-            'sentiment': 'neutral'
-        },
-        'asian_markets': {
-            'nikkei_change_pct': 0.0,
-            'hang_seng_change_pct': 0.0,
-            'sgx_nifty': 0.0,
-            'sentiment': 'neutral'
-        },
-        'commodities': {
-            'crude_oil_change_pct': 0.0,
-            'gold_change_pct': 0.0
-        },
-        'forex': {
-            'dollar_index': 0.0,
-            'usdinr_change': 0.0
-        },
-        'overall_sentiment': 'neutral',
-        'high_impact_news': [],
-        'timestamp': datetime.now().isoformat()
-    }
-    
-    logger.info("✅ Pre-market data fetched (stub)")
-    return pre_market_data
-
-
-def fetch_global_cues_tick() -> Dict[str, float]:
-    """
-    Fetch real-time global market cues
-    TODO: Subscribe to real-time feeds
-    """
-    global_cues = {
-        'us_futures_sp500': 0.0,
-        'us_futures_nasdaq': 0.0,
-        'crude_oil_spot': 0.0,
-        'dollar_index': 0.0,
-        'sgx_nifty': 0.0,
-        'timestamp': datetime.now().isoformat()
-    }
-    
-    return global_cues
-
-
-def score_sentiment(realtime: bool = True) -> float:
-    """
-    Score market sentiment
-    Range: [-1, 1] where -1 = very bearish, +1 = very bullish
-    
-    TODO: Implement sentiment scoring:
-    - Collect recent tweets/news
-    - Run through FinBERT or similar
-    - Aggregate scores
-    """
-    # Day 1: Return neutral
-    return 0.0
-
-
-def analyze_breaking_news_impact(news_item: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Analyze impact of breaking news
-    
-    High-impact keywords:
-    - "RBI rate cut/hike"
-    - "war", "conflict"
-    - "crude oil surge/crash"
-    - "Fed announcement"
-    - "election results"
-    - "GDP data"
-    - "inflation data"
-    """
-    text = news_item.get('text', '').lower()
-    
-    # High-impact keyword detection
-    high_impact_keywords = [
-        'rbi rate', 'fed rate', 'rate cut', 'rate hike',
-        'war', 'conflict', 'invasion',
-        'crude oil', 'oil price',
-        'gdp', 'inflation', 'cpi',
-        'election', 'pm modi', 'government',
-        'rupee crash', 'rupee surge'
+def get_default_sources() -> List[str]:
+    return [
+        "https://pulse.zerodha.com/",
+        "https://www.nseindia.com/",
+        "https://upstox.com/news/",
     ]
-    
-    is_high_impact = any(keyword in text for keyword in high_impact_keywords)
-    
-    # Sentiment (TODO: Use actual model)
-    sentiment = 0.0
-    
-    impact_analysis = {
-        'is_high_impact': is_high_impact,
-        'affected_indices': ['NIFTY', 'BANKNIFTY'] if is_high_impact else [],
-        'sentiment': sentiment,
-        'confidence': 0.5,
-        'timestamp': datetime.now().isoformat()
-    }
-    
-    if is_high_impact:
-        logger.warning(f"🚨 HIGH IMPACT NEWS DETECTED: {text[:100]}")
-    
-    return impact_analysis
 
 
-def build_sentiment_features(
-    sentiment_scores: List[float],
-    ts: List[int],
-    window: str = '5min'
-) -> Dict[str, float]:
+def _clean_text(text: str) -> str:
+    if not text:
+        return ""
+    # Remove URLs
+    text = re.sub(r"https?://\S+", " ", text)
+    # Remove stock tickers like TICKER, $TICKER or NSE:TICKER
+    text = re.sub(r"\$?[A-Z]{2,6}(?:[:._-][A-Z]{1,6})?", " ", text)
+    # Remove mentions and hashtags
+    text = re.sub(r"[@#]\w+", " ", text)
+    # Remove emojis (common ranges)
+    emoji_pattern = re.compile(
+        "[\U0001F600-\U0001F64F"  # emoticons
+        "\U0001F300-\U0001F5FF"  # symbols & pictographs
+        "\U0001F680-\U0001F6FF"  # transport & map symbols
+        "\U0001F1E0-\U0001F1FF]", flags=re.UNICODE)
+    text = emoji_pattern.sub(" ", text)
+    # Normalize whitespace and lower
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _load_ticker_map() -> Dict[str, List[str]]:
+    """Load ticker/company mapping from `stock_names_symbol.csv` if available.
+
+    Returns dict: SYMBOL -> [aliases...]
     """
-    Build sentiment features from raw scores
-    Aggregate over rolling windows
-    """
-    # TODO: Implement actual aggregation
-    # For now: return zeros
-    
-    features = {
-        'market_sentiment_5min': 0.0,
-        'sentiment_momentum_15min': 0.0,
-        'breaking_news_flag': False,
-        'timestamp': datetime.now().isoformat()
-    }
-    
-    return features
+    global _TICKER_MAP
+    if _TICKER_MAP is not None:
+        return _TICKER_MAP
+    path = "stock_names_symbol.csv"
+    try:
+        df = pd.read_csv(path)
+        # Expect columns like 'symbol' and 'name' (be tolerant)
+        sym_col = None
+        name_col = None
+        for c in df.columns:
+            if c.lower() in ("symbol", "ticker"):
+                sym_col = c
+            if c.lower() in ("name", "company"):
+                name_col = c
+        mapping: Dict[str, List[str]] = {}
+        for _, row in df.iterrows():
+            sym = str(row[sym_col]) if sym_col else None
+            name = str(row[name_col]) if name_col else None
+            if not sym and not name:
+                continue
+            key = (sym or name).upper()
+            aliases = [a.upper() for a in {sym, name} if a and str(a).strip()]
+            mapping[key] = aliases
+        _TICKER_MAP = mapping
+        return _TICKER_MAP
+    except Exception:
+        _TICKER_MAP = {}
+        return _TICKER_MAP
 
 
-def compute_sentiment_momentum(
-    sentiment_scores: List[float],
-    window: int = 15
-) -> float:
+def _simple_map_to_tickers(text: str) -> List[str]:
+    """Simple mapping: find known symbols or company names appearing in text."""
+    mapping = _load_ticker_map()
+    if not mapping:
+        return []
+    txt = text.upper()
+    found = set()
+    # simple substring match for aliases
+    for key, aliases in mapping.items():
+        for a in aliases:
+            if not a:
+                continue
+            if a in txt:
+                found.add(key)
+    return list(found)
+
+
+def fetch_news_from_sources(sources: Optional[List[str]] = None, max_items_per_site: int = 6) -> List[Dict[str, Any]]:
+    """Fetch and return cleaned, deduplicated news articles from the allowed sources.
+
+    Each returned item contains: source, url, title, text, cleaned_text, timestamp
     """
-    Compute sentiment momentum (rate of change)
-    
+    sess = _create_session()
+    sources = sources or get_default_sources()
+    items: List[Dict[str, Any]] = []
+    seen_hashes = set()
+
+    for site in sources:
+        try:
+            resp = sess.get(site, timeout=8)
+            resp.raise_for_status()
+            html = resp.text
+            snippets = _parse_html_for_texts(html, base_url=site, session=sess, max_links=max_items_per_site)
+            for sn in snippets[:max_items_per_site]:
+                title = sn.get("title") or ""
+                summary = sn.get("summary") or ""
+                url = sn.get("url") or site
+                raw_text = f"{title} {summary}".strip()
+                cleaned = _clean_text(raw_text)
+                if not cleaned:
+                    continue
+                h = hash(cleaned[:300])
+                if h in seen_hashes:
+                    continue
+                seen_hashes.add(h)
+                items.append({
+                    "source": site,
+                    "url": url,
+                    "title": title,
+                    "text": raw_text,
+                    "cleaned_text": cleaned,
+                    "timestamp": datetime.utcnow(),
+                })
+        except Exception as e:
+            logger.debug(f"Failed to fetch {site}: {e}")
+
+    return items
+
+
+def _parse_html_for_texts(html: str, base_url: str, session: requests.Session, max_links: int = 6) -> List[Dict[str, str]]:
+    results: List[Dict[str, str]] = []
+    if BeautifulSoup is None:
+        # fallback minimal parser
+        m = re.search(r"<title[^>]*>(.*?)</title>", html, flags=re.I | re.S)
+        if m:
+            results.append({"title": m.group(1).strip(), "summary": "", "url": base_url})
+        return results
+
+    soup = BeautifulSoup(html, "html.parser")
+    # Title and meta
+    if soup.title and soup.title.string:
+        results.append({"title": soup.title.string.strip(), "summary": "", "url": base_url})
+    meta = soup.find("meta", attrs={"name": "description"}) or soup.find("meta", attrs={"property": "og:description"})
+    if meta and meta.get("content"):
+        results.append({"title": (meta.get("content") or "")[:140].strip(), "summary": meta.get("content"), "url": base_url})
+
+    # Find prominent article/heading links
+    count = 0
+    for a in soup.find_all("a", href=True):
+        txt = a.get_text(" ", strip=True)
+        href = a.get("href")
+        if not txt or len(txt) < 30:
+            continue
+        # normalize url
+        if href.startswith("/"):
+            href = base_url.rstrip("/") + href
+        if href.startswith("http") and base_url.split("//")[1].split("/")[0] in href:
+            results.append({"title": txt, "summary": "", "url": href})
+            count += 1
+        if count >= max_links:
+            break
+
+    return results
+
+
+DEFAULT_MODEL_CANDIDATES = [
+    "yashkumar/distil-finbert",  # distil-size finbert (community)
+    "ProsusAI/finbert",          # original FinBERT
+    "yiyanghkust/finbert-tone",  # alt FinBERT tone
+    "cardiffnlp/twitter-roberta-base-sentiment",  # general sentiment
+    "distilbert-base-uncased-finetuned-sst-2-english",  # light baseline
+]
+
+
+def configure_sentiment_model(model_name: Optional[str] = None, force_reload: bool = False) -> Optional[str]:
+    """Explicitly configure (and load) a HuggingFace sentiment model.
+
     Args:
-        sentiment_scores: List of sentiment scores over time
-        window: Window size in minutes
-    
+        model_name: Specific model to load. If None, will consult env var NEWS_SENTIMENT_MODEL, then fall back to defaults.
+        force_reload: If True, will drop any existing pipeline and reload.
+
     Returns:
-        momentum: Sentiment momentum
+        The loaded model name or None if fallback (lexicon) will be used.
     """
-    if len(sentiment_scores) < 2:
-        return 0.0
-    
-    # Simple momentum: current - average of past window
-    current_sentiment = sentiment_scores[-1]
-    past_avg = sum(sentiment_scores[-window:]) / len(sentiment_scores[-window:])
-    
-    momentum = current_sentiment - past_avg
-    
-    return momentum
+    global _SENTIMENT_PIPELINE, _SENTIMENT_MODEL_NAME
+    if _SENTIMENT_PIPELINE is not None and not force_reload:
+        return _SENTIMENT_MODEL_NAME
+
+    # Reset if forcing
+    if force_reload:
+        _SENTIMENT_PIPELINE = None
+        _SENTIMENT_MODEL_NAME = None
+
+    # Determine desired model
+    desired = model_name or os.getenv("NEWS_SENTIMENT_MODEL")
+    candidates = []
+    if desired:
+        candidates.append(desired)
+    candidates.extend([m for m in DEFAULT_MODEL_CANDIDATES if m != desired])
+
+    try:
+        from transformers import pipeline  # noqa: F401
+        from transformers import logging as hf_logging
+        hf_logging.set_verbosity_error()  # reduce noise
+    except Exception as e:
+        logger.debug(f"transformers unavailable for sentiment model: {e}")
+        return None
+
+    for m in candidates:
+        try:
+            _SENTIMENT_PIPELINE = pipeline("sentiment-analysis", model=m, truncation=True)
+            _SENTIMENT_MODEL_NAME = m
+            logger.info(f"Sentiment model configured: {m}")
+            return m
+        except Exception as e:
+            logger.debug(f"Failed loading {m}: {e}")
+
+    logger.warning("All candidate models failed; using lexicon fallback.")
+    return None
+
+
+def _ensure_sentiment_pipeline(prefer: Optional[str] = None):
+    """Lazy load sentiment pipeline using configure_sentiment_model if not yet loaded."""
+    if _SENTIMENT_PIPELINE is not None:
+        return
+    configure_sentiment_model(prefer_model_or_env(prefer))
+
+
+def prefer_model_or_env(explicit: Optional[str]) -> Optional[str]:
+    """Resolve preferred model via explicit argument or environment variable."""
+    return explicit or os.getenv("NEWS_SENTIMENT_MODEL")
+
+
+def score_sentiment_batch(texts: List[str], model_name: Optional[str] = None) -> List[float]:
+    """Score a batch of texts and return sentiment in [-1, 1].
+
+    Uses DistilFinBERT-like models when available, otherwise a fast lexicon fallback.
+    """
+    texts_clean = [t.strip() for t in texts]
+    # Allow caller to force a model (first call) by passing model_name
+    if model_name and (_SENTIMENT_PIPELINE is None or _SENTIMENT_MODEL_NAME != model_name):
+        configure_sentiment_model(model_name, force_reload=True)
+    _ensure_sentiment_pipeline(model_name)
+    if _SENTIMENT_PIPELINE is not None:
+        try:
+            outs = _SENTIMENT_PIPELINE(texts_clean, truncation=True)
+            scores: List[float] = []
+            for out in outs:
+                lab = str(out.get("label", "")).lower()
+                sc = float(out.get("score", 0.0))
+                if "neg" in lab or "negative" in lab:
+                    scores.append(-sc)
+                elif "pos" in lab or "positive" in lab:
+                    scores.append(sc)
+                elif "neutral" in lab:
+                    scores.append(0.0)
+                else:
+                    # Unknown label mapping
+                    scores.append((sc if "pos" in lab else 0.0))
+            return scores
+        except Exception as e:
+            logger.debug(f"Transformer pipeline failed at scoring: {e}")
+
+    # Fallback lexicon-based approach (fast)
+    POS = {"gain", "up", "rise", "bull", "positive", "beat", "surge", "profit", "rally", "good", "buy", "gain"}
+    NEG = {"loss", "down", "fall", "drop", "bear", "negative", "miss", "crash", "weak", "sell", "decline"}
+    results = []
+    for t in texts_clean:
+        if not t:
+            results.append(0.0)
+            continue
+        words = set(re.findall(r"\w+", t.lower()))
+        p = len(words & POS)
+        n = len(words & NEG)
+        if p == n:
+            results.append(0.0)
+        else:
+            v = (p - n) / max(p + n, 1)
+            results.append(max(-1.0, min(1.0, v)))
+    return results
+
+
+def map_news_to_tickers(news_items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Attach detected tickers to news items using a simple mapping."""
+    for it in news_items:
+        txt = it.get("cleaned_text") or it.get("text") or ""
+        it["tickers"] = _simple_map_to_tickers(txt)
+    return news_items
+
+
+def aggregate_rolling_sentiment(news_items: List[Dict[str, Any]], window_minutes: int = 5) -> pd.DataFrame:
+    """Compute rolling mean sentiment over a time-indexed DataFrame (window in minutes).
+
+    Returns a DataFrame indexed by timestamp with columns: sentiment_mean, count
+    """
+    if not news_items:
+        return pd.DataFrame(columns=["sentiment_mean", "count"]) 
+    df = pd.DataFrame([
+        {"ts": (it.get("timestamp") if isinstance(it.get("timestamp"), datetime) else datetime.utcnow()),
+         "text": it.get("cleaned_text") or it.get("text") or "",
+         "source": it.get("source")}
+        for it in news_items
+    ])
+    if df.empty:
+        return pd.DataFrame(columns=["sentiment_mean", "count"]) 
+    df["ts"] = pd.to_datetime(df["ts"])
+    # Score in batch
+    df["score"] = score_sentiment_batch(df["text"].tolist())
+    df = df.sort_values("ts")
+    df = df.set_index("ts")
+    # Resample into 1-minute bins first
+    r = df["score"].resample("1T").mean().fillna(0)
+    roll = r.rolling(f"{window_minutes}T").mean()
+    out = pd.DataFrame({"sentiment_mean": roll, "count": df["score"].resample("1T").count()})
+    return out
 
 
 def get_market_sentiment_live() -> Dict[str, Any]:
-    """
-    Get live market sentiment snapshot
-    Day 1: Returns neutral
-    """
-    sentiment_snapshot = {
-        'market_sentiment_5min': 0.0,
-        'sentiment_momentum_15min': 0.0,
-        'breaking_news_flag': False,
-        'high_impact_news': None,
-        'confidence': 0.0,
-        'timestamp': datetime.now().isoformat()
+    """Top-level helper: fetch, map tickers, score, and return 5-min aggregated snapshot."""
+    items = fetch_news_from_sources(get_default_sources(), max_items_per_site=6)
+    items = map_news_to_tickers(items)
+    agg = aggregate_rolling_sentiment(items, window_minutes=5)
+    if agg.empty:
+        return {
+            "market_sentiment_5min": 0.0,
+            "sentiment_timeseries": [],
+            "high_impact_news": [],
+            "timestamp": datetime.utcnow().isoformat(),
+            "confidence": 0.0,
+        }
+    latest = agg.dropna().iloc[-1]
+    # pick top 3 long texts as high impact heuristics
+    high_impact = sorted(items, key=lambda x: len(x.get("cleaned_text", "")), reverse=True)[:3]
+    return {
+        "market_sentiment_5min": float(latest.get("sentiment_mean", 0.0)),
+        "sentiment_timeseries": agg["sentiment_mean"].fillna(0).tail(12).tolist(),
+        "high_impact_news": high_impact,
+        "timestamp": datetime.utcnow().isoformat(),
+        "confidence": 0.7 if _SENTIMENT_PIPELINE is not None else 0.35,
     }
-    
-    return sentiment_snapshot
 
 
-# ==================== FUTURE: PRODUCTION IMPLEMENTATION ====================
-
-def preprocess_text(text: str) -> str:
-    """
-    Preprocess text for sentiment analysis
-    - Clean URLs, mentions, hashtags
-    - Lowercase
-    - Remove special chars
-    """
-    # TODO: Implement text cleaning
-    cleaned = text.lower().strip()
-    return cleaned
-
-
-def extract_entities(text: str) -> List[str]:
-    """
-    Extract named entities (stocks, indices, companies)
-    Using NER model
-    """
-    # TODO: Implement NER
-    entities = []
-    return entities
-
-
-def score_sentiment_batch(texts: List[str]) -> List[float]:
-    """
-    Batch sentiment scoring for efficiency
-    Using FinBERT or similar financial sentiment model
-    """
-    # TODO: Implement batch inference
-    scores = [0.0] * len(texts)
-    return scores
-
-
-def aggregate_sentiment_by_symbol(
-    news_items: List[Dict[str, Any]]
-) -> Dict[str, float]:
-    """
-    Aggregate sentiment scores by stock/index symbol
-    """
-    symbol_sentiment = {}
-    
-    # TODO: Implement aggregation logic
-    # Group news by affected symbols
-    # Weight by source credibility
-    # Recent news weighted higher
-    
-    return symbol_sentiment
-
-
-def detect_sentiment_regime_change(
-    historical_sentiment: List[float],
-    current_sentiment: float,
-    threshold: float = 0.3
-) -> bool:
-    """
-    Detect significant sentiment regime changes
-    E.g., Shift from bullish to bearish
-    """
-    if len(historical_sentiment) < 10:
-        return False
-    
-    avg_historical = sum(historical_sentiment[-10:]) / 10
-    
-    # Check for regime change
-    if abs(current_sentiment - avg_historical) > threshold:
-        logger.warning(f"⚠️ Sentiment regime change: {avg_historical:.2f} → {current_sentiment:.2f}")
-        return True
-    
-    return False
+__all__ = [
+    "get_default_sources",
+    "fetch_news_from_sources",
+    "score_sentiment_batch",
+    "map_news_to_tickers",
+    "aggregate_rolling_sentiment",
+    "get_market_sentiment_live",
+    "configure_sentiment_model",
+]

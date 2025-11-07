@@ -754,7 +754,7 @@ def execute_smart_trade(
         position_sizing_result = calculate_position_size(
             symbol=symbol,
             current_price=current_price,
-            rl_signal=signal,
+            rl_signal=(1.0 if signal['action']=='BUY' else -1.0) * signal.get('confidence', 0.0),
             account_balance=portfolio.get('total_capital', 1000000),
             available_margin=portfolio.get('available_margin', 500000),
             win_rate=portfolio.get('win_rate', 0.55),
