@@ -1,0 +1,26 @@
+{
+  "state_shape": [
+    30,
+    6
+  ],
+  "n_actions": 3,
+  "feature_cols": [
+    "macd",
+    "volatility"
+  ],
+  "lookback": 30,
+  "training_config": {
+    "num_episodes": 150,
+    "batch_size": 64,
+    "target_update_freq": 1000,
+    "save_freq": 10,
+    "save_dir": "./models/intraday_dqn",
+    "log_freq": 1
+  },
+  "agent_config": {
+    "gamma": 0.3,
+    "epsilon_start": 1.0,
+    "epsilon_end": 0.01,
+    "epsilon_decay_steps": 10000
+  }
+}
