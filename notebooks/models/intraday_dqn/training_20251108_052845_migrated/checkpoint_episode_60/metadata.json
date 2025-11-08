@@ -1,0 +1,6 @@
+{
+  "episode": 60,
+  "timestamp": "2025-11-08T05:28:45.864264",
+  "migrated_from": "models\\intraday_dqn\\checkpoint_episode_60.weights.h5",
+  "weights_file": "model.weights.h5"
+}

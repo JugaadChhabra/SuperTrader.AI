@@ -1,6 +1,7 @@
 {
   "episode": 70,
-  "timestamp": "2025-11-08T03:11:29.216973",
-  "migrated_from_old_structure": true,
-  "original_file": "models\\intraday_dqn\\checkpoint_episode_70.weights.h5"
+  "timestamp": "2025-11-08T04:56:43.350404",
+  "training_steps": 23107,
+  "epsilon": 0.01,
+  "buffer_size": 5000
 }

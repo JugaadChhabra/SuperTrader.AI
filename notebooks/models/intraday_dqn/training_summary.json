@@ -1,0 +1,14 @@
+{
+  "total_episodes": 150,
+  "total_training_steps": 49587,
+  "avg_steps_per_episode": 330.58,
+  "final_epsilon": 0.01,
+  "avg_return_pct": -3.0758408377188564,
+  "avg_sharpe": -0.5961444999105502,
+  "avg_trades": 34.17333333333333,
+  "avg_win_rate": 42.875647462195786,
+  "best_episode_return": -1.67890994045879,
+  "worst_episode_return": -10.130767054394962,
+  "final_10_avg_return": -2.212600545069666,
+  "final_10_avg_sharpe": -0.4008731469557813
+}
