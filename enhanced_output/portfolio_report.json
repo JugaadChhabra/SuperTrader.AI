@@ -1,0 +1,24 @@
+{
+  "portfolio_summary": {
+    "initial_capital": 1000000.0,
+    "current_cash": 1000000.0,
+    "invested_value": 0,
+    "market_value": 0,
+    "portfolio_value": 1000000.0,
+    "unrealized_pnl": 0,
+    "realized_pnl": 0,
+    "total_pnl": 0,
+    "total_return_pct": 0.0,
+    "completed_trades": 0,
+    "open_positions": 0
+  },
+  "completed_trades": [],
+  "ai_model_info": {
+    "dqn_agent_available": false,
+    "feature_scaler_available": false,
+    "models_used": "DQN+RL_Strategy",
+    "decision_fusion": "Combined RL and DQN signals"
+  },
+  "current_positions": {},
+  "generated_at": "2025-11-08T08:12:27.193117"
+}

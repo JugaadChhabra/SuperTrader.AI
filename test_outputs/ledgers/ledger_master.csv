@@ -1,0 +1,11 @@
+trade_id,session_id,timestamp,symbol,action,strategy,quantity,price,notional_value,transaction_costs,net_cost,sentiment,confidence,q_values,slippage_bps,success,unrealized_pnl,realized_pnl,portfolio_value,cash_balance,position_change,error_message,metadata
+TEST_TRADE_001,session_20251108_070422_ed17e7,2025-11-08 07:04:22.142938,RELIANCE,BUY,TestStrategy,10,2500.0,0.0,0.0,0.0,0.0,0.0,[],0.0,False,0.0,0.0,0.0,0.0,{},,{}
+TEST_TRADE_002,session_20251108_070422_ed17e7,2025-11-08 07:04:22.248148,TCS,BUY,TestStrategy,5,3000.0,0.0,0.0,0.0,0.0,0.0,[],0.0,False,0.0,0.0,0.0,0.0,{},,{}
+TEST_TRADE_003,session_20251108_070422_ed17e7,2025-11-08 07:04:22.353467,RELIANCE,SELL,TestStrategy,-10,2550.0,0.0,0.0,0.0,0.0,0.0,[],0.0,False,0.0,0.0,0.0,0.0,{},,{}
+TEST_TRADE_004,session_20251108_070422_ed17e7,2025-11-08 07:04:22.457938,HDFC,BUY,TestStrategy,8,1600.0,0.0,0.0,0.0,0.0,0.0,[],0.0,False,0.0,0.0,0.0,0.0,{},,{}
+TEST_TRADE_005,session_20251108_070422_ed17e7,2025-11-08 07:04:22.563307,TCS,SELL,TestStrategy,-5,3100.0,0.0,0.0,0.0,0.0,0.0,[],0.0,False,0.0,0.0,0.0,0.0,{},,{}
+TEST_TRADE_001,session_20251108_071650_000811,2025-11-08 07:16:50.732111,NIFTY,BUY,TestStrategy,50,19500.0,0.0,0.0,0.0,0.0,0.0,[],0.0,False,0.0,0.0,0.0,0.0,{},,{}
+TEST_TRADE_002,session_20251108_071650_000811,2025-11-08 07:16:50.836843,BANKNIFTY,BUY,TestStrategy,25,43000.0,0.0,0.0,0.0,0.0,0.0,[],0.0,False,0.0,0.0,0.0,0.0,{},,{}
+TEST_TRADE_003,session_20251108_071650_000811,2025-11-08 07:16:50.942263,NIFTY,SELL,TestStrategy,-50,19550.0,0.0,0.0,0.0,0.0,0.0,[],0.0,False,0.0,0.0,0.0,0.0,{},,{}
+TEST_TRADE_004,session_20251108_071650_000811,2025-11-08 07:16:51.047819,FINNIFTY,BUY,TestStrategy,40,17500.0,0.0,0.0,0.0,0.0,0.0,[],0.0,False,0.0,0.0,0.0,0.0,{},,{}
+TEST_TRADE_005,session_20251108_071650_000811,2025-11-08 07:16:51.154826,BANKNIFTY,SELL,TestStrategy,-25,43100.0,0.0,0.0,0.0,0.0,0.0,[],0.0,False,0.0,0.0,0.0,0.0,{},,{}

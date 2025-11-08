@@ -1,0 +1,10 @@
+trade_id,session_id,timestamp,symbol,action,strategy,quantity,price,notional_value,transaction_costs,net_cost,sentiment,confidence,q_values,slippage_bps,success,unrealized_pnl,realized_pnl,portfolio_value,cash_balance,position_change,error_message,metadata
+BUY_RELIANCE_073357,session_20251108_073357_7fc3a8,2025-11-08 07:33:57.804488,RELIANCE,BUY,Equity Portfolio Manager,6,2850.741,0.0,0.0,0.0,0.0,0.0,[],0.0,False,0.0,0.0,0.0,0.0,{},,{}
+BUY_TCS_073357,session_20251108_073357_7fc3a8,2025-11-08 07:33:57.804663,TCS,BUY,Equity Portfolio Manager,5,4201.176,0.0,0.0,0.0,0.0,0.0,[],0.0,False,0.0,0.0,0.0,0.0,{},,{}
+BUY_HDFCBANK_073357,session_20251108_073357_7fc3a8,2025-11-08 07:33:57.804901,HDFCBANK,BUY,Equity Portfolio Manager,11,1650.4455,0.0,0.0,0.0,0.0,0.0,[],0.0,False,0.0,0.0,0.0,0.0,{},,{}
+BUY_INFY_073357,session_20251108_073357_7fc3a8,2025-11-08 07:33:57.805075,INFY,BUY,Equity Portfolio Manager,8,1820.364,0.0,0.0,0.0,0.0,0.0,[],0.0,False,0.0,0.0,0.0,0.0,{},,{}
+BUY_ITC_073357,session_20251108_073357_7fc3a8,2025-11-08 07:33:57.805213,ITC,BUY,Equity Portfolio Manager,28,485.097,0.0,0.0,0.0,0.0,0.0,[],0.0,False,0.0,0.0,0.0,0.0,{},,{}
+BUY_ASIANPAINT_073357,session_20251108_073357_7fc3a8,2025-11-08 07:33:57.805342,ASIANPAINT,BUY,Equity Portfolio Manager,4,2950.59,0.0,0.0,0.0,0.0,0.0,[],0.0,False,0.0,0.0,0.0,0.0,{},,{}
+SELL_TCS_073358,session_20251108_073357_7fc3a8,2025-11-08 07:33:58.807875,TCS,SELL,Equity Portfolio Manager,3,3991.1172,0.0,0.0,0.0,0.0,0.0,[],0.0,False,0.0,0.0,0.0,0.0,{},,{}
+SELL_HDFCBANK_073358,session_20251108_073357_7fc3a8,2025-11-08 07:33:58.808973,HDFCBANK,SELL,Equity Portfolio Manager,8,1848.4989600000001,0.0,0.0,0.0,0.0,0.0,[],0.0,False,0.0,0.0,0.0,0.0,{},,{}
+SELL_ITC_073358,session_20251108_073357_7fc3a8,2025-11-08 07:33:58.809558,ITC,SELL,Equity Portfolio Manager,33,557.86155,0.0,0.0,0.0,0.0,0.0,[],0.0,False,0.0,0.0,0.0,0.0,{},,{}

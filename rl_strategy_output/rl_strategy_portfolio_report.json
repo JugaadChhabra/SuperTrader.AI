@@ -1,0 +1,46 @@
+{
+  "portfolio_summary": {
+    "initial_capital": 1000000.0,
+    "current_cash": 1000000.0,
+    "invested_value": 0,
+    "market_value": 0,
+    "portfolio_value": 1000000.0,
+    "unrealized_pnl": 0,
+    "realized_pnl": 0,
+    "total_pnl": 0,
+    "total_return_pct": 0.0,
+    "completed_trades": 0,
+    "open_positions": 0
+  },
+  "completed_trades": [],
+  "ai_model_info": {
+    "model_type": "RL_Strategy_Agent_Phase4",
+    "features_used": [
+      "RSI",
+      "MACD",
+      "PCR",
+      "Momentum_Confluence",
+      "Market_Regime",
+      "Options_Flow"
+    ],
+    "decision_logic": "Enhanced rule-based with Phase 4 signals",
+    "time_constraints": "Intraday position sizing and risk management"
+  },
+  "current_positions": {},
+  "session_info": {
+    "initial_capital": 1000000.0,
+    "generated_at": "2025-11-08T08:31:24.199644",
+    "stocks_analyzed": [
+      "RELIANCE",
+      "TCS",
+      "HDFCBANK",
+      "INFY",
+      "ITC",
+      "ASIANPAINT",
+      "LT",
+      "WIPRO"
+    ],
+    "positions_built": 0,
+    "trades_executed": 0
+  }
+}

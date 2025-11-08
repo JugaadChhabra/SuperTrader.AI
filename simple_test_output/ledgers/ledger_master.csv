@@ -1,0 +1,17 @@
+trade_id,session_id,timestamp,symbol,action,strategy,quantity,price,notional_value,transaction_costs,net_cost,sentiment,confidence,q_values,slippage_bps,success,unrealized_pnl,realized_pnl,portfolio_value,cash_balance,position_change,error_message,metadata
+BUY_RELIANCE_074030,session_20251108_074030_829f8d,2025-11-08 07:40:30.381500,RELIANCE,BUY,Simple Portfolio Test,12,2850.57,0.0,0.0,0.0,0.0,0.0,[],0.0,False,0.0,0.0,0.0,0.0,{},,{}
+BUY_TCS_074030,session_20251108_074030_829f8d,2025-11-08 07:40:30.381646,TCS,BUY,Simple Portfolio Test,8,4200.84,0.0,0.0,0.0,0.0,0.0,[],0.0,False,0.0,0.0,0.0,0.0,{},,{}
+BUY_HDFCBANK_074030,session_20251108_074030_829f8d,2025-11-08 07:40:30.381741,HDFCBANK,BUY,Simple Portfolio Test,19,1650.33,0.0,0.0,0.0,0.0,0.0,[],0.0,False,0.0,0.0,0.0,0.0,{},,{}
+BUY_INFY_074030,session_20251108_074030_829f8d,2025-11-08 07:40:30.381969,INFY,BUY,Simple Portfolio Test,17,1820.364,0.0,0.0,0.0,0.0,0.0,[],0.0,False,0.0,0.0,0.0,0.0,{},,{}
+BUY_ITC_074030,session_20251108_074030_829f8d,2025-11-08 07:40:30.382091,ITC,BUY,Simple Portfolio Test,62,485.097,0.0,0.0,0.0,0.0,0.0,[],0.0,False,0.0,0.0,0.0,0.0,{},,{}
+SELL_RELIANCE_074030,session_20251108_074030_829f8d,2025-11-08 07:40:30.382195,RELIANCE,SELL,Simple Portfolio Test,-10,3099.194,0.0,0.0,0.0,0.0,0.0,[],0.0,False,0.0,0.0,0.0,0.0,{},,{}
+SELL_TCS_074030,session_20251108_074030_829f8d,2025-11-08 07:40:30.382296,TCS,SELL,Simple Portfolio Test,-8,3948.973,0.0,0.0,0.0,0.0,0.0,[],0.0,False,0.0,0.0,0.0,0.0,{},,{}
+SELL_ITC_074030,session_20251108_074030_829f8d,2025-11-08 07:40:30.382389,ITC,SELL,Simple Portfolio Test,-59,579.8492,0.0,0.0,0.0,0.0,0.0,[],0.0,False,0.0,0.0,0.0,0.0,{},,{}
+BUY_RELIANCE_074449,session_20251108_074449_65dc08,2025-11-08 07:44:49.730281,RELIANCE,BUY,Simple Portfolio Test,12,2850.57,0.0,0.0,0.0,0.0,0.0,[],0.0,False,0.0,0.0,0.0,0.0,{},,{}
+BUY_TCS_074449,session_20251108_074449_65dc08,2025-11-08 07:44:49.730638,TCS,BUY,Simple Portfolio Test,8,4200.84,0.0,0.0,0.0,0.0,0.0,[],0.0,False,0.0,0.0,0.0,0.0,{},,{}
+BUY_HDFCBANK_074449,session_20251108_074449_65dc08,2025-11-08 07:44:49.730772,HDFCBANK,BUY,Simple Portfolio Test,19,1650.33,0.0,0.0,0.0,0.0,0.0,[],0.0,False,0.0,0.0,0.0,0.0,{},,{}
+BUY_INFY_074449,session_20251108_074449_65dc08,2025-11-08 07:44:49.730871,INFY,BUY,Simple Portfolio Test,17,1820.364,0.0,0.0,0.0,0.0,0.0,[],0.0,False,0.0,0.0,0.0,0.0,{},,{}
+BUY_ITC_074449,session_20251108_074449_65dc08,2025-11-08 07:44:49.730963,ITC,BUY,Simple Portfolio Test,62,485.097,0.0,0.0,0.0,0.0,0.0,[],0.0,False,0.0,0.0,0.0,0.0,{},,{}
+SELL_RELIANCE_074449,session_20251108_074449_65dc08,2025-11-08 07:44:49.731094,RELIANCE,SELL,Simple Portfolio Test,-10,3099.194,0.0,0.0,0.0,0.0,0.0,[],0.0,False,0.0,0.0,0.0,0.0,{},,{}
+SELL_TCS_074449,session_20251108_074449_65dc08,2025-11-08 07:44:49.731261,TCS,SELL,Simple Portfolio Test,-8,3948.973,0.0,0.0,0.0,0.0,0.0,[],0.0,False,0.0,0.0,0.0,0.0,{},,{}
+SELL_ITC_074449,session_20251108_074449_65dc08,2025-11-08 07:44:49.731379,ITC,SELL,Simple Portfolio Test,-59,579.8492,0.0,0.0,0.0,0.0,0.0,[],0.0,False,0.0,0.0,0.0,0.0,{},,{}
