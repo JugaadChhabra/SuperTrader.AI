@@ -1,0 +1,13 @@
+.glass-layout {
+  display: flex;
+  min-height: 100vh;
+  background: orange;
+  padding-top: 64px; /* Space for fixed navbar */
+}
+.main-content {
+  flex: 1;
+  margin-left: 220px;
+  background: orange;
+  min-height: calc(100vh - 64px); /* Subtract navbar height */
+  padding: 1rem;
+}

@@ -1,24 +1,489 @@
 {
   "portfolio_summary": {
     "initial_capital": 1000000.0,
-    "current_cash": 1000000.0,
-    "invested_value": 0,
-    "market_value": 0,
-    "portfolio_value": 1000000.0,
-    "unrealized_pnl": 0,
-    "realized_pnl": 0,
-    "total_pnl": 0,
-    "total_return_pct": 0.0,
-    "completed_trades": 0,
-    "open_positions": 0
+    "current_cash": 155928.94266236486,
+    "invested_value": 18892.920509091604,
+    "market_value": 21321.25,
+    "portfolio_value": 177250.19266236486,
+    "unrealized_pnl": 2428.329490908396,
+    "realized_pnl": 11038.62699380068,
+    "total_pnl": 13466.956484709077,
+    "total_return_pct": -82.27498073376351,
+    "completed_trades": 4,
+    "open_positions": 3
   },
-  "completed_trades": [],
+  "completed_trades": [
+    {
+      "trade_id": "T005",
+      "symbol": "RELIANCE",
+      "quantity": 10,
+      "entry_date": "2025-11-08 11:50:19",
+      "entry_price": 2850.57,
+      "exit_date": "2025-11-08 11:50:19",
+      "exit_price": 2989.0520699999997,
+      "entry_value": 28526.560770439668,
+      "exit_value": 29861.932271000373,
+      "gross_pnl": 1384.8206999999957,
+      "transaction_costs": 57.11498977006267,
+      "net_pnl": 1335.3715005607046,
+      "return_percent": 4.858048390321912,
+      "holding_days": 0,
+      "cash_balance": 61213.10852819933,
+      "entry_reason": "AI BUY: RL=0.00, DQN=1, Conf=0.294, Combined=0.70",
+      "exit_reason": "EOD Square-off (Intraday mandate)",
+      "entry_ai_signal": {
+        "rl_decision": {
+          "action": 0.0,
+          "raw_action": 0,
+          "aggression_multiplier": 1.0,
+          "q_values": [
+            0.3,
+            0.5,
+            0.2
+          ],
+          "confidence": 0.3,
+          "mode": "eval",
+          "logic": "phase4_enhanced_rule_based",
+          "rsi": "58.17376",
+          "macd": "0.5273749",
+          "phase4_signals": {
+            "pcr_bullish": "False",
+            "pcr_bearish": "False",
+            "momentum_confluence": 3,
+            "market_regime_trend": "False",
+            "high_risk_environment": "False",
+            "high_quality_setup": false,
+            "volatility_regime": "normal",
+            "options_flow_bullish": false,
+            "options_flow_bearish": false
+          },
+          "pcr_sentiment": "neutral",
+          "momentum_confluence_score": 3,
+          "market_regime": "consolidating",
+          "risk_level": "normal",
+          "setup_quality": "standard"
+        },
+        "dqn_decision": {
+          "action": 2,
+          "q_values": [
+            0.0145028755068779,
+            -0.09778986871242523,
+            0.19648341834545135
+          ],
+          "mode": "exploit"
+        },
+        "combined_signal": 0.7,
+        "state_features": {
+          "rsi": 58.173755027560595,
+          "macd": 0.5273749089428332,
+          "volatility": 0.24463687282625343,
+          "time_to_close": 204.99999999999997
+        },
+        "feature_scaled": true
+      },
+      "exit_ai_signal": {},
+      "ai_model_used": "DQN+RL_Strategy",
+      "feature_scaler_applied": true
+    },
+    {
+      "trade_id": "T006",
+      "symbol": "ITC",
+      "quantity": 54,
+      "entry_date": "2025-11-08 11:50:19",
+      "entry_price": 485.097,
+      "exit_date": "2025-11-08 11:50:19",
+      "exit_price": 577.03457,
+      "entry_value": 26214.80488373721,
+      "exit_value": 31131.066509833086,
+      "gross_pnl": 4964.628780000003,
+      "transaction_costs": 55.01507505065142,
+      "net_pnl": 4916.261626095875,
+      "return_percent": 18.952409518096403,
+      "holding_days": 0,
+      "cash_balance": 92344.17503803241,
+      "entry_reason": "AI BUY: RL=0.00, DQN=1, Conf=0.087, Combined=0.70",
+      "exit_reason": "EOD Square-off (Intraday mandate)",
+      "entry_ai_signal": {
+        "rl_decision": {
+          "action": 0.0,
+          "raw_action": 0,
+          "aggression_multiplier": 1.0,
+          "q_values": [
+            0.3,
+            0.5,
+            0.2
+          ],
+          "confidence": 0.3,
+          "mode": "eval",
+          "logic": "phase4_enhanced_rule_based",
+          "rsi": "66.63093",
+          "macd": "0.90699047",
+          "phase4_signals": {
+            "pcr_bullish": "False",
+            "pcr_bearish": "False",
+            "momentum_confluence": 3,
+            "market_regime_trend": "False",
+            "high_risk_environment": "False",
+            "high_quality_setup": false,
+            "volatility_regime": "normal",
+            "options_flow_bullish": false,
+            "options_flow_bearish": false
+          },
+          "pcr_sentiment": "neutral",
+          "momentum_confluence_score": 3,
+          "market_regime": "consolidating",
+          "risk_level": "normal",
+          "setup_quality": "standard"
+        },
+        "dqn_decision": {
+          "action": 2,
+          "q_values": [
+            0.053339287638664246,
+            0.031546711921691895,
+            0.11880765855312347
+          ],
+          "mode": "exploit"
+        },
+        "combined_signal": 0.7,
+        "state_features": {
+          "rsi": 66.63093207559524,
+          "macd": 0.9069904697476312,
+          "volatility": 0.22560606613558187,
+          "time_to_close": 204.99999999999997
+        },
+        "feature_scaled": true
+      },
+      "exit_ai_signal": {},
+      "ai_model_used": "DQN+RL_Strategy",
+      "feature_scaler_applied": true
+    },
+    {
+      "trade_id": "T007",
+      "symbol": "ASIANPAINT",
+      "quantity": 9,
+      "entry_date": "2025-11-08 11:50:19",
+      "entry_price": 2950.59,
+      "exit_date": "2025-11-08 11:50:19",
+      "exit_price": 3341.68153,
+      "entry_value": 26575.731492844992,
+      "exit_value": 30046.514530925124,
+      "gross_pnl": 3519.8237699999972,
+      "transaction_costs": 55.1949705677203,
+      "net_pnl": 3470.7830380801315,
+      "return_percent": 13.254689062187541,
+      "holding_days": 0,
+      "cash_balance": 122390.68956895753,
+      "entry_reason": "AI BUY: RL=0.00, DQN=1, Conf=0.085, Combined=0.70",
+      "exit_reason": "EOD Square-off (Intraday mandate)",
+      "entry_ai_signal": {
+        "rl_decision": {
+          "action": 0.0,
+          "raw_action": 0,
+          "aggression_multiplier": 1.0,
+          "q_values": [
+            0.3,
+            0.5,
+            0.2
+          ],
+          "confidence": 0.3,
+          "mode": "eval",
+          "logic": "phase4_enhanced_rule_based",
+          "rsi": "57.284462",
+          "macd": "-0.07515232",
+          "phase4_signals": {
+            "pcr_bullish": "False",
+            "pcr_bearish": "False",
+            "momentum_confluence": 3,
+            "market_regime_trend": "False",
+            "high_risk_environment": "False",
+            "high_quality_setup": false,
+            "volatility_regime": "normal",
+            "options_flow_bullish": false,
+            "options_flow_bearish": false
+          },
+          "pcr_sentiment": "neutral",
+          "momentum_confluence_score": 3,
+          "market_regime": "consolidating",
+          "risk_level": "normal",
+          "setup_quality": "standard"
+        },
+        "dqn_decision": {
+          "action": 2,
+          "q_values": [
+            0.04012811928987503,
+            0.009614191949367523,
+            0.09431885927915573
+          ],
+          "mode": "exploit"
+        },
+        "combined_signal": 0.7,
+        "state_features": {
+          "rsi": 57.28446445852218,
+          "macd": -0.0751523254523016,
+          "volatility": 0.17018587639237956,
+          "time_to_close": 204.99999999999997
+        },
+        "feature_scaled": true
+      },
+      "exit_ai_signal": {},
+      "ai_model_used": "DQN+RL_Strategy",
+      "feature_scaler_applied": true
+    },
+    {
+      "trade_id": "T008",
+      "symbol": "WIPRO",
+      "quantity": 111,
+      "entry_date": "2025-11-08 11:50:19",
+      "entry_price": 290.058,
+      "exit_date": "2025-11-08 11:50:19",
+      "exit_price": 302.40950599999996,
+      "entry_value": 32222.042264343374,
+      "exit_value": 33538.253093407344,
+      "gross_pnl": 1371.017165999997,
+      "transaction_costs": 61.42411485699711,
+      "net_pnl": 1316.2108290639699,
+      "return_percent": 4.258288342331529,
+      "holding_days": 0,
+      "cash_balance": 155928.94266236486,
+      "entry_reason": "AI BUY: RL=0.00, DQN=1, Conf=0.095, Combined=0.70",
+      "exit_reason": "EOD Square-off (Intraday mandate)",
+      "entry_ai_signal": {
+        "rl_decision": {
+          "action": 0.0,
+          "raw_action": 0,
+          "aggression_multiplier": 1.0,
+          "q_values": [
+            0.3,
+            0.5,
+            0.2
+          ],
+          "confidence": 0.3,
+          "mode": "eval",
+          "logic": "phase4_enhanced_rule_based",
+          "rsi": "50.49386",
+          "macd": "3.223725",
+          "phase4_signals": {
+            "pcr_bullish": "False",
+            "pcr_bearish": "False",
+            "momentum_confluence": 3,
+            "market_regime_trend": "False",
+            "high_risk_environment": "False",
+            "high_quality_setup": false,
+            "volatility_regime": "normal",
+            "options_flow_bullish": false,
+            "options_flow_bearish": false
+          },
+          "pcr_sentiment": "neutral",
+          "momentum_confluence_score": 3,
+          "market_regime": "consolidating",
+          "risk_level": "normal",
+          "setup_quality": "standard"
+        },
+        "dqn_decision": {
+          "action": 2,
+          "q_values": [
+            0.024757221341133118,
+            0.0735137015581131,
+            0.11967748403549194
+          ],
+          "mode": "exploit"
+        },
+        "combined_signal": 0.7,
+        "state_features": {
+          "rsi": 50.493858194275724,
+          "macd": 3.223725155340866,
+          "volatility": 0.23447628259987874,
+          "time_to_close": 204.99999999999997
+        },
+        "feature_scaled": true
+      },
+      "exit_ai_signal": {},
+      "ai_model_used": "DQN+RL_Strategy",
+      "feature_scaler_applied": true
+    }
+  ],
   "ai_model_info": {
-    "dqn_agent_available": false,
-    "feature_scaler_available": false,
+    "dqn_agent_available": true,
+    "feature_scaler_available": true,
     "models_used": "DQN+RL_Strategy",
-    "decision_fusion": "Combined RL and DQN signals"
+    "decision_fusion": "Combined RL and DQN signals",
+    "trading_style": "INTRADAY - All positions squared off by 3:15 PM"
   },
-  "current_positions": {},
-  "generated_at": "2025-11-08T08:12:27.193117"
+  "current_positions": {
+    "RELIANCE": {
+      "quantity": 2,
+      "entry_price": 2850.57,
+      "current_price": 2989.6499999999996,
+      "market_value": 5979.299999999999,
+      "unrealized_pnl": 278.15999999999894,
+      "days_held": 0,
+      "ai_entry_details": {
+        "rl_decision": {
+          "action": 0.0,
+          "raw_action": 0,
+          "aggression_multiplier": 1.0,
+          "q_values": [
+            0.3,
+            0.5,
+            0.2
+          ],
+          "confidence": 0.3,
+          "mode": "eval",
+          "logic": "phase4_enhanced_rule_based",
+          "rsi": "58.17376",
+          "macd": "0.5273749",
+          "phase4_signals": {
+            "pcr_bullish": "False",
+            "pcr_bearish": "False",
+            "momentum_confluence": 3,
+            "market_regime_trend": "False",
+            "high_risk_environment": "False",
+            "high_quality_setup": false,
+            "volatility_regime": "normal",
+            "options_flow_bullish": false,
+            "options_flow_bearish": false
+          },
+          "pcr_sentiment": "neutral",
+          "momentum_confluence_score": 3,
+          "market_regime": "consolidating",
+          "risk_level": "normal",
+          "setup_quality": "standard"
+        },
+        "dqn_decision": {
+          "action": 2,
+          "q_values": [
+            0.0145028755068779,
+            -0.09778986871242523,
+            0.19648341834545135
+          ],
+          "mode": "exploit"
+        },
+        "combined_signal": 0.7,
+        "state_features": {
+          "rsi": 58.173755027560595,
+          "macd": 0.5273749089428332,
+          "volatility": 0.24463687282625343,
+          "time_to_close": 204.99999999999997
+        },
+        "feature_scaled": true
+      }
+    },
+    "ITC": {
+      "quantity": 15,
+      "entry_price": 485.097,
+      "current_price": 577.15,
+      "market_value": 8657.25,
+      "unrealized_pnl": 1380.795,
+      "days_held": 0,
+      "ai_entry_details": {
+        "rl_decision": {
+          "action": 0.0,
+          "raw_action": 0,
+          "aggression_multiplier": 1.0,
+          "q_values": [
+            0.3,
+            0.5,
+            0.2
+          ],
+          "confidence": 0.3,
+          "mode": "eval",
+          "logic": "phase4_enhanced_rule_based",
+          "rsi": "66.63093",
+          "macd": "0.90699047",
+          "phase4_signals": {
+            "pcr_bullish": "False",
+            "pcr_bearish": "False",
+            "momentum_confluence": 3,
+            "market_regime_trend": "False",
+            "high_risk_environment": "False",
+            "high_quality_setup": false,
+            "volatility_regime": "normal",
+            "options_flow_bullish": false,
+            "options_flow_bearish": false
+          },
+          "pcr_sentiment": "neutral",
+          "momentum_confluence_score": 3,
+          "market_regime": "consolidating",
+          "risk_level": "normal",
+          "setup_quality": "standard"
+        },
+        "dqn_decision": {
+          "action": 2,
+          "q_values": [
+            0.053339287638664246,
+            0.031546711921691895,
+            0.11880765855312347
+          ],
+          "mode": "exploit"
+        },
+        "combined_signal": 0.7,
+        "state_features": {
+          "rsi": 66.63093207559524,
+          "macd": 0.9069904697476312,
+          "volatility": 0.22560606613558187,
+          "time_to_close": 204.99999999999997
+        },
+        "feature_scaled": true
+      }
+    },
+    "ASIANPAINT": {
+      "quantity": 2,
+      "entry_price": 2950.59,
+      "current_price": 3342.35,
+      "market_value": 6684.7,
+      "unrealized_pnl": 783.5199999999995,
+      "days_held": 0,
+      "ai_entry_details": {
+        "rl_decision": {
+          "action": 0.0,
+          "raw_action": 0,
+          "aggression_multiplier": 1.0,
+          "q_values": [
+            0.3,
+            0.5,
+            0.2
+          ],
+          "confidence": 0.3,
+          "mode": "eval",
+          "logic": "phase4_enhanced_rule_based",
+          "rsi": "57.284462",
+          "macd": "-0.07515232",
+          "phase4_signals": {
+            "pcr_bullish": "False",
+            "pcr_bearish": "False",
+            "momentum_confluence": 3,
+            "market_regime_trend": "False",
+            "high_risk_environment": "False",
+            "high_quality_setup": false,
+            "volatility_regime": "normal",
+            "options_flow_bullish": false,
+            "options_flow_bearish": false
+          },
+          "pcr_sentiment": "neutral",
+          "momentum_confluence_score": 3,
+          "market_regime": "consolidating",
+          "risk_level": "normal",
+          "setup_quality": "standard"
+        },
+        "dqn_decision": {
+          "action": 2,
+          "q_values": [
+            0.04012811928987503,
+            0.009614191949367523,
+            0.09431885927915573
+          ],
+          "mode": "exploit"
+        },
+        "combined_signal": 0.7,
+        "state_features": {
+          "rsi": 57.28446445852218,
+          "macd": -0.0751523254523016,
+          "volatility": 0.17018587639237956,
+          "time_to_close": 204.99999999999997
+        },
+        "feature_scaled": true
+      }
+    }
+  },
+  "generated_at": "2025-11-08T11:50:19.465975"
 }

@@ -279,9 +279,9 @@ def sample_action(
         confidence = min(1.0, base_confidence + pcr_boost + confluence_boost + regime_boost + quality_boost + risk_penalty)
         
         # Only take position if Phase 4 filters support it
-        if confidence > 0.4 and not high_risk_env:
+        if confidence > 0.5 and not high_risk_env:  # Raised threshold from 0.4 to 0.5
             action = 1  # Long
-            logger.info(f"🟢 ENHANCED LONG | RSI: {rsi:.1f} | MACD: {macd:.2f} | PCR: {pcr_bullish} | Conf: {confluence_boost:.2f}")
+            logger.info(f"🟢 ENHANCED LONG | RSI: {rsi:.1f} | MACD: {macd:.2f} | PCR: {pcr_bullish} | Conf: {confidence:.2f}")
         else:
             action = 0
             confidence = 0.3
@@ -301,9 +301,9 @@ def sample_action(
         confidence = min(1.0, base_confidence + pcr_boost + confluence_boost + regime_boost + quality_boost + risk_penalty)
         
         # Only take position if Phase 4 filters support it
-        if confidence > 0.4 and not high_risk_env:
+        if confidence > 0.5 and not high_risk_env:  # Raised threshold from 0.4 to 0.5
             action = -1  # Short
-            logger.info(f"🔴 ENHANCED SHORT | RSI: {rsi:.1f} | MACD: {macd:.2f} | PCR: {pcr_bearish} | Conf: {confluence_boost:.2f}")
+            logger.info(f"🔴 ENHANCED SHORT | RSI: {rsi:.1f} | MACD: {macd:.2f} | PCR: {pcr_bearish} | Conf: {confidence:.2f}")
         else:
             action = 0
             confidence = 0.3

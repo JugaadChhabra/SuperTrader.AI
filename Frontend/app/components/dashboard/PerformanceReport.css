@@ -1,0 +1,69 @@
+/* Performance table specific styles */
+.performance-table-header {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr;
+  gap: 1rem;
+  color: #b0b0b0;
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.performance-holdings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.performance-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr;
+  gap: 1rem;
+  align-items: center;
+  color: #fff;
+  font-size: 0.95rem;
+}
+
+.metric-name {
+  font-weight: 500;
+  color: #e0e0e0;
+}
+
+.metric-all,
+.metric-long, 
+.metric-short {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.value {
+  color: #fff;
+  font-weight: 600;
+}
+
+.change {
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.change.positive {
+  color: #27ae60;
+}
+
+.change.negative {
+  color: #e74c3c;
+}
+
+.positive {
+  color: #27ae60;
+}
+
+.negative {
+  color: #e74c3c;
+}

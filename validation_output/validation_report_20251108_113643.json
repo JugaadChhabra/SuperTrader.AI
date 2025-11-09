@@ -1,0 +1,14 @@
+{
+  "model": "Loaded Keras dueling LSTM weights: /Users/muaazshaikh/SuperTrader.AI/notebooks/models/intraday_dqn/checkpoint_episode_150.weights.h5",
+  "metrics": {
+    "total_return": -0.03136357677816615,
+    "sharpe_intraday": -0.674592850085208,
+    "steps": 1868,
+    "win_rate_steps": 0.12633832976445397,
+    "num_trades": 68,
+    "win_rate_trades": 0.4411764705882353,
+    "avg_trade_return": -6.05755590356157e-05,
+    "max_drawdown": -0.06423101390148539,
+    "equity_final": 0.9686364232218339
+  }
+}

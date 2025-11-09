@@ -40,6 +40,8 @@ from agents.enhanced_trade_ledger import SessionLedger, get_session_ledger, star
 from agents.data_agent import init_data_agent, fetch_index_futures_ohlcv, build_feature_frame, compute_indicators
 from agents.news_agent import get_market_sentiment_live
 from agents.rl_strategy_agent import init_rl_agent, build_state_representation, sample_action
+from configs.config import get_config
+from utils.scaler_manager import load_scaler, get_scaler_path
 
 logger = logging.getLogger(__name__)
 
@@ -884,7 +886,7 @@ def execute_smart_trade(
         )
         
         # Create trade record with simplified risk data
-            trade_record = Trade(
+        trade_record = Trade(
                 order_id=order['order_id'] if 'order_id' in order else f"ORDER_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
                 symbol=symbol,
                 action=TradeAction.BUY if signal['action'] == 'BUY' else TradeAction.SELL,
@@ -1991,26 +1993,38 @@ class ExecutionAgent:
     def _load_dqn_model(self) -> None:
         """Load trained DQN model and feature scaler"""
         try:
-            # Load feature scaler
-            scaler_path = Path("models/feature_scaler.pkl")
-            if scaler_path.exists():
-                with open(scaler_path, 'rb') as f:
-                    self.feature_scaler = pickle.load(f)
-                self.logger.info(f"✅ Feature scaler loaded from {scaler_path}")
-            else:
+            # Load feature scaler using centralized scaler manager and config
+            try:
+                cfg = get_config()
+                model_paths = cfg.get_model_paths()
+                scaler = load_scaler(model_paths.get('feature_scaler'))
+                if scaler is not None:
+                    self.feature_scaler = scaler
+                    self.logger.info(f"✅ Feature scaler loaded from {model_paths.get('feature_scaler')}")
+                else:
+                    self.feature_scaler = None
+                    self.logger.warning("⚠️ Feature scaler not found, using raw features")
+            except Exception as e:
                 self.feature_scaler = None
-                self.logger.warning("⚠️ Feature scaler not found, using raw features")
-            
-            # Load DQN model (TensorFlow/Keras)
-            model_path = Path("notebooks/models/intraday_dqn/checkpoint_episode_110.weights.h5")
-            if model_path.exists():
-                # Note: Actual model loading would require the model architecture
-                # For now, we'll use rule-based logic from rl_strategy_agent
+                self.logger.warning(f"⚠️ Failed to load scaler via scaler_manager: {e}")
+
+            # Load DQN model checkpoint path from config (if available)
+            try:
+                latest = model_paths.get('latest_checkpoint')
+                if latest:
+                    model_path = Path(latest)
+                    # Note: Actual model loading requires the model architecture; store path for later
+                    self.dqn_model_path = str(model_path)
+                    self.dqn_model = None
+                    self.logger.info(f"📍 DQN model checkpoint located at {model_path}")
+                else:
+                    self.dqn_model = None
+                    self.dqn_model_path = None
+                    self.logger.warning("⚠️ No DQN checkpoint found in configured model dir")
+            except Exception as e:
                 self.dqn_model = None
-                self.logger.info(f"📍 DQN model found at {model_path} (using rule-based logic for now)")
-            else:
-                self.dqn_model = None
-                self.logger.warning("⚠️ DQN model not found, using rule-based strategy")
+                self.dqn_model_path = None
+                self.logger.warning(f"⚠️ Failed to resolve DQN model path: {e}")
                 
         except Exception as e:
             self.logger.error(f"Failed to load DQN model: {e}")

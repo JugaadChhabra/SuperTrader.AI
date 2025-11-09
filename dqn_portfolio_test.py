@@ -19,6 +19,8 @@ from typing import Dict, List, Any, Optional
 sys.path.insert(0, str(Path(__file__).parent))
 
 from utils.portfolio_simulator import PortfolioSimulator, ActionType
+from utils.scaler_manager import load_scaler, get_scaler_path
+from configs.config import get_config
 from models.dqn_network import TradingAgent, TradingBrain
 from enhanced_portfolio_test import TradeTracker  # Reuse the good tracking system
 
@@ -51,17 +53,17 @@ class DQNPortfolioManager:
         else:
             print("🔄 Using randomly initialized DQN model (for demonstration)")
         
-        # Load feature scaler if available
-        scaler_path = Path("models/feature_scaler.pkl")
-        if scaler_path.exists():
-            try:
-                with open(scaler_path, 'rb') as f:
-                    self.feature_scaler = pickle.load(f)
-                print(f"✅ Loaded feature scaler from {scaler_path}")
-            except Exception as e:
-                print(f"⚠️ Could not load scaler: {e}")
+        # Load feature scaler using centralized manager
+        try:
+            cfg = get_config()
+            scaler = load_scaler(cfg.get_model_paths().get('feature_scaler'))
+            if scaler is not None:
+                self.feature_scaler = scaler
+                print(f"✅ Loaded feature scaler from {cfg.get_model_paths().get('feature_scaler')}")
+            else:
                 self.feature_scaler = None
-        else:
+        except Exception as e:
+            print(f"⚠️ Could not load scaler via scaler_manager: {e}")
             self.feature_scaler = None
     
     def create_market_state(self, symbol: str, price: float, timestamp: datetime) -> np.ndarray:

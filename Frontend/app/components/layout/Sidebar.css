@@ -1,0 +1,31 @@
+.glass-sidebar {
+  min-width: 220px;
+  background: rgba(255,255,255,0.07);
+  border-right: 1.5px solid rgba(255,255,255,0.18);
+  box-shadow: 2px 0 12px 0 rgba(0,0,0,0.10);
+  color: #fff;
+  padding: 2rem 1.5rem;
+  font-size: 1.2rem;
+  font-weight: 500;
+  backdrop-filter: blur(8px);
+  height: calc(100vh - 64px); /* Subtract navbar height */
+  position: fixed;
+  left: 0;
+  top: 64px; /* Start below navbar */
+}
+.glass-sidebar ul {
+  list-style: none;
+  padding: 0;
+}
+.glass-sidebar li {
+  margin-bottom: 1.5rem;
+}
+.glass-sidebar a {
+  color: #fff;
+  text-decoration: none;
+  opacity: 0.85;
+  transition: opacity 0.2s;
+}
+.glass-sidebar a:hover {
+  opacity: 1;
+}
