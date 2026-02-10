@@ -34,8 +34,6 @@ except ImportError as e:
     TradingAgent = None
 
 from utils.portfolio_simulator import PortfolioSimulator, ActionType
-from utils.scaler_manager import load_scaler, get_scaler_path
-from configs.config import get_config
 from agents.rl_strategy_agent import (
     sample_action, 
     build_state_representation,
@@ -74,18 +72,14 @@ class TradeTracker:
                 self.dqn_agent = None
                 print("⚠️ DQN Agent not available - using RL strategy only")
             
-            # Load feature scaler via centralized manager
-            try:
-                cfg = get_config()
-                scaler = load_scaler(cfg.get_model_paths().get('feature_scaler'))
-                if scaler is not None:
-                    self.feature_scaler = scaler
-                    print(f"✅ Feature scaler loaded from {cfg.get_model_paths().get('feature_scaler')}")
-                else:
-                    print(f"⚠️ Feature scaler not found, using None")
-                    self.feature_scaler = None
-            except Exception as e:
-                print(f"⚠️ Feature scaler load failed: {e}")
+            # Load feature scaler
+            scaler_path = Path("models/feature_scaler.pkl")
+            if scaler_path.exists():
+                with open(scaler_path, 'rb') as f:
+                    self.feature_scaler = pickle.load(f)
+                print(f"✅ Feature scaler loaded from {scaler_path}")
+            else:
+                print(f"⚠️ Feature scaler not found at {scaler_path}, using None")
                 self.feature_scaler = None
                 
         except Exception as e:
@@ -170,38 +164,10 @@ class TradeTracker:
             return 'closing'
     
     def _get_ai_decision(self, symbol: str, price: float, timestamp: datetime, 
-                        has_position: bool = False, entry_price: float = None) -> Dict[str, Any]:
-        """Get AI-driven trading decision using DQN and RL strategy
-        
-        Args:
-            symbol: Stock symbol
-            price: Current price
-            timestamp: Current time
-            has_position: Whether we currently hold this stock
-            entry_price: Price at which position was entered (for profit check)
-        """
+                        has_position: bool = False) -> Dict[str, Any]:
+        """Get AI-driven trading decision using DQN and RL strategy"""
         
         try:
-            # If we have a position, check if it's profitable
-            if has_position and entry_price is not None:
-                current_return = (price - entry_price) / entry_price
-                
-                # Only hold if position is deeply underwater (> -5%)
-                # For smaller losses or any profit, let AI decide
-                if current_return < -0.05:
-                    return {
-                        'action': ActionType.HOLD,
-                        'reason': f"HOLD - Position deeply underwater ({current_return*100:+.1f}%), waiting for recovery",
-                        'ai_details': {
-                            'current_return': current_return,
-                            'profit_filter': 'active'
-                        }
-                    }
-                # If profitable by >3%, strongly consider exit
-                elif current_return > 0.03:
-                    # Bias toward selling profitable positions
-                    pass  # Let AI decide but with sell bias below
-            
             # Create market features
             features = self._create_market_features(symbol, price, timestamp)
             
@@ -217,24 +183,18 @@ class TradeTracker:
                 options_feats=features['options_feats']
             )
             
-            # Apply feature scaling if available (check dimension match)
-            state_vector_scaled = state_vector
+            # Apply feature scaling if available
             if self.feature_scaler is not None:
                 try:
-                    scaler_features = getattr(self.feature_scaler, 'n_features_in_', len(state_vector))
-                    if scaler_features == len(state_vector):
-                        state_vector_scaled = self.feature_scaler.transform(state_vector.reshape(1, -1))[0]
-                    else:
-                        if not hasattr(self, '_scaling_warned'):
-                            print(f"⚠️ Scaler dimension mismatch: expected {scaler_features}, got {len(state_vector)} - using raw features")
-                            self._scaling_warned = True
+                    state_vector_scaled = self.feature_scaler.transform(state_vector.reshape(1, -1))[0]
                 except Exception as e:
-                    if not hasattr(self, '_scaling_warned'):
-                        print(f"⚠️ Feature scaling failed: {e}")
-                        self._scaling_warned = True
+                    print(f"⚠️ Feature scaling failed: {e}")
+                    state_vector_scaled = state_vector
+            else:
+                state_vector_scaled = state_vector
             
             # Create market state for DQN (30 timesteps x features)
-            market_state_full = np.tile(state_vector_scaled, (30, 1)).astype(np.float32)
+            market_state = np.tile(state_vector_scaled, (30, 1)).astype(np.float32)
             
             # Get RL strategy decision (enhanced rule-based for now)
             time_remaining = features['time_feats']['minutes_to_close']
@@ -248,18 +208,6 @@ class TradeTracker:
             # Get DQN decision if agent is available
             if self.dqn_agent is not None:
                 try:
-                    # Adapt market state to DQN's expected feature size
-                    expected_features = getattr(self.dqn_agent, 'num_features', 32)
-                    if market_state_full.shape[1] > expected_features:
-                        # Slice to match DQN input
-                        market_state = market_state_full[:, :expected_features]
-                    elif market_state_full.shape[1] < expected_features:
-                        # Pad with zeros
-                        padding = np.zeros((market_state_full.shape[0], expected_features - market_state_full.shape[1]))
-                        market_state = np.hstack([market_state_full, padding]).astype(np.float32)
-                    else:
-                        market_state = market_state_full
-                    
                     dqn_action, dqn_info = self.dqn_agent.decide_action(
                         market_state=market_state,
                         mode='eval',
@@ -284,33 +232,14 @@ class TradeTracker:
             # Convert DQN action to RL format
             dqn_action_mapped = dqn_action - 1  # Convert to -1, 0, 1
             
-            # Enhanced decision fusion with confidence weighting
-            # Use Q-values to assess DQN confidence
-            q_vals = dqn_decision['q_values']
-            dqn_confidence = max(q_vals) - min(q_vals)  # Q-value spread indicates confidence
-            rl_confidence = abs(rl_action)  # RL confidence from action magnitude
+            # Decision fusion: Average the two approaches
+            combined_action = (rl_action + dqn_action_mapped) / 2.0
             
-            # Aggressive fusion - favor trading over holding
-            dqn_weight = 0.7  # DQN gets more weight
-            rl_weight = 0.3
-            combined_action = (rl_action * rl_weight) + (dqn_action_mapped * dqn_weight)
-            
-            # Check if we have profitable position for exit bias
-            if has_position and entry_price is not None:
-                current_return = (price - entry_price) / entry_price
-                if current_return > 0.03:  # >3% profit
-                    # Add strong sell bias for profitable positions
-                    combined_action -= 0.5  # Push toward sell
-            
-            # Aggressive thresholds - favor taking positions
-            buy_threshold = -0.2  # Even slightly negative can trigger buy
-            sell_threshold = 0.1 if has_position else -0.3  # Much easier to exit if holding position
-            
-            # Convert to portfolio action - much more aggressive
-            if combined_action >= buy_threshold and not has_position:
+            # Convert to portfolio action
+            if combined_action > 0.3 and not has_position:
                 portfolio_action = ActionType.BUY
-                reason = f"AI BUY: RL={rl_action:.2f}, DQN={dqn_action_mapped}, Conf={dqn_confidence:.3f}, Combined={combined_action:.2f}"
-            elif combined_action < sell_threshold and has_position:
+                reason = f"AI BUY: RL={rl_action:.2f}, DQN={dqn_action_mapped}, Combined={combined_action:.2f}"
+            elif combined_action < -0.3 and has_position:
                 portfolio_action = ActionType.SELL
                 reason = f"AI SELL: RL={rl_action:.2f}, DQN={dqn_action_mapped}, Combined={combined_action:.2f}"
             else:
@@ -510,12 +439,11 @@ class TradeTracker:
 
 
 def run_enhanced_portfolio_test():
-    """Run enhanced portfolio test with INTRADAY trading rules"""
+    """Run enhanced portfolio test with DQN and RL strategy integration"""
     
     print("🚀 Enhanced Portfolio Manager with AI-Driven Trading Decisions")
     print("=" * 70)
     print("🤖 Using: DQN Network + RL Strategy Agent + Feature Scaler")
-    print("⏰ INTRADAY TRADING: 9:30 AM - 3:15 PM (All positions closed daily)")
     print("=" * 70)
     
     # Initialize
@@ -535,23 +463,16 @@ def run_enhanced_portfolio_test():
         "WIPRO": 290.0
     }
     
-    # Filter: Only consider stocks that will show positive returns
-    # (In production, this would be replaced by AI prediction/screening)
-    profitable_stocks = ["ITC", "ASIANPAINT", "RELIANCE", "WIPRO"]
-    filtered_stocks = {k: v for k, v in stocks.items() if k in profitable_stocks}
-    
     print(f"💰 Initial Capital: ₹{initial_capital:,.0f}")
-    print(f"📊 Stock Universe: {len(stocks)} equities (filtered to {len(filtered_stocks)} profitable)")
+    print(f"📊 Stock Universe: {len(stocks)} equities")
     print(f"🧠 AI Models: {'✅' if tracker.dqn_agent else '❌'} DQN, {'✅' if tracker.feature_scaler else '❌'} Scaler")
-    print(f"🎯 Trading Strategy: Intraday momentum with EOD square-off")
     print()
     
-    # Phase 1: Morning Entry (9:30 AM - 11:00 AM)
-    print("🤖 Phase 1: Morning Entry (9:30 AM - 11:00 AM)")
+    # Phase 1: AI-driven portfolio construction
+    print("🤖 Phase 1: AI-Driven Portfolio Construction")
     print("-" * 45)
-    morning_time = datetime.now().replace(hour=10, minute=30)
     
-    for symbol, price in filtered_stocks.items():
+    for symbol, price in stocks.items():
         # Get AI decision for each stock
         ai_decision = tracker._get_ai_decision(symbol, price, datetime.now(), has_position=False)
         
@@ -583,74 +504,70 @@ def run_enhanced_portfolio_test():
     
     print()
     
-    # Phase 2: EOD Square-Off (3:00 PM - 3:15 PM) - MANDATORY FOR INTRADAY
-    print("� Phase 2: End-of-Day Square-Off (3:00 PM - MANDATORY)")
+    # Phase 2: Simulate time passage and AI rebalancing
+    print("📊 Phase 2: AI Market Analysis & Rebalancing (2 months later)")
     print("-" * 60)
     
-    # Intraday price movements by 3 PM
-    eod_time = datetime.now().replace(hour=15, minute=0)
-    eod_prices = {}
-    
-    # Define intraday price movements
-    winning_stocks = {
-        "ITC": 1.19,           # +19% consumer staples
-        "ASIANPAINT": 1.133,   # +13.3% paint sector
-        "RELIANCE": 1.049,     # +4.9% energy
-        "WIPRO": 1.043         # +4.3% IT services
-    }
-    
-    losing_stocks = {
-        "TCS": 0.943,          # -5.7% IT under pressure
-        "HDFCBANK": 0.980,     # -2.0% banking headwinds
-        "INFY": 0.932,         # -6.8% IT sector
-        "LT": 0.962            # -3.8% infra
-    }
+    # Simulate realistic price movements
+    future_time = datetime.now() + timedelta(days=60)
+    new_prices = {}
     
     for symbol, base_price in stocks.items():
-        if symbol in winning_stocks:
-            change_factor = winning_stocks[symbol]
+        # Simulate market movements with some realistic patterns
+        if symbol in ["TCS", "INFY"]:  # IT sector under pressure
+            change_factor = np.random.uniform(0.92, 0.98)
+        elif symbol in ["ITC", "ASIANPAINT"]:  # Consumer/Paint doing well
+            change_factor = np.random.uniform(1.05, 1.20)
+        elif symbol == "RELIANCE":  # Energy volatility
+            change_factor = np.random.uniform(0.95, 1.10)
         else:
-            change_factor = losing_stocks.get(symbol, 0.98)
+            change_factor = np.random.uniform(0.95, 1.05)
         
-        eod_prices[symbol] = base_price * change_factor
+        new_prices[symbol] = base_price * change_factor
     
-    print("📈 Intraday Price Movement (by 3:00 PM):")
-    for symbol in filtered_stocks.keys():
-        if symbol in eod_prices:
-            old_price = stocks[symbol]
-            eod_price = eod_prices[symbol]
-            change_pct = (eod_price / old_price - 1) * 100
-            print(f"   {symbol:10}: ₹{old_price:6.0f} → ₹{eod_price:6.0f} ({change_pct:+5.1f}%)")
+    print("📈 Updated Market Prices:")
+    for symbol, new_price in new_prices.items():
+        old_price = stocks[symbol]
+        change_pct = (new_price / old_price - 1) * 100
+        print(f"   {symbol:10}: ₹{old_price:6.0f} → ₹{new_price:6.0f} ({change_pct:+5.1f}%)")
     print()
     
-    print("⚠️ INTRADAY RULE: All positions MUST be squared-off before 3:15 PM")
-    print()
+    # AI-driven selling decisions
+    print("🤖 AI Rebalancing Decisions:")
+    print("-" * 30)
     
-    # Force square-off ALL positions
     for symbol in list(tracker.positions.keys()):
-        if symbol in eod_prices:
-            entry_price = tracker.positions[symbol]['avg_entry_price']
-            eod_price = eod_prices[symbol]
-            pnl_pct = (eod_price - entry_price) / entry_price * 100
+        if symbol in new_prices:
+            # Get AI decision for potential exit
+            ai_decision = tracker._get_ai_decision(symbol, new_prices[symbol], future_time, has_position=True)
             
-            result = tracker.execute_trade(
-                simulator, symbol, ActionType.SELL, eod_prices[symbol], 
-                "EOD Square-off (Intraday mandate)", {}
-            )
-            
-            if result['success']:
-                profit_emoji = "💰" if result['pnl'] > 0 else "📉"
-                print(f"🔔 {profit_emoji} EOD SQUARED-OFF {symbol}: {result['quantity']} shares @ ₹{eod_prices[symbol]:.2f}")
-                print(f"   💰 P&L: ₹{result['pnl']:+,.0f} ({pnl_pct:+.1f}%)")
-                print(f"   ⏰ Reason: Mandatory intraday square-off before market close")
+            if ai_decision['action'] == ActionType.SELL:
+                result = tracker.execute_trade(
+                    simulator, symbol, ActionType.SELL, new_prices[symbol], 
+                    ai_decision['reason'], ai_decision['ai_details']
+                )
+                
+                if result['success']:
+                    print(f"🤖 AI SOLD {symbol}: {result['quantity']} shares @ ₹{new_prices[symbol]:.2f}")
+                    print(f"   📊 Reason: {ai_decision['reason']}")
+                    print(f"   💰 P&L: ₹{result['pnl']:+,.0f} ({result['return_pct']:+.1f}%)")
+                    
+                    # Show AI decision details
+                    ai_details = ai_decision['ai_details']
+                    if 'combined_signal' in ai_details:
+                        print(f"   🎯 AI Signal Strength: {ai_details['combined_signal']:+.3f}")
+                    
+                    print(f"   💰 Cash: ₹{result['cash_balance']:,.0f}")
+                else:
+                    print(f"❌ Failed to sell {symbol}: {result.get('error', 'Unknown error')}")
             else:
-                print(f"❌ Failed to square-off {symbol}: {result.get('error', 'Unknown error')}")
+                print(f"🤖 AI HOLDS {symbol} @ ₹{new_prices[symbol]:.2f} - {ai_decision['reason']}")
     
     # Generate reports
     output_dir = Path("enhanced_output")
     output_dir.mkdir(exist_ok=True)
     
-    portfolio_summary = tracker.get_portfolio_summary(eod_prices)
+    portfolio_summary = tracker.get_portfolio_summary(new_prices)
     
     # Save completed trades as CSV
     if tracker.completed_trades:
@@ -667,16 +584,15 @@ def run_enhanced_portfolio_test():
             'dqn_agent_available': tracker.dqn_agent is not None,
             'feature_scaler_available': tracker.feature_scaler is not None,
             'models_used': 'DQN+RL_Strategy',
-            'decision_fusion': 'Combined RL and DQN signals',
-            'trading_style': 'INTRADAY - All positions squared off by 3:15 PM'
+            'decision_fusion': 'Combined RL and DQN signals'
         },
         'current_positions': {
             symbol: {
                 'quantity': pos['quantity'],
                 'entry_price': pos['avg_entry_price'],
-                'current_price': eod_prices.get(symbol, pos['avg_entry_price']),
-                'market_value': pos['quantity'] * eod_prices.get(symbol, pos['avg_entry_price']),
-                'unrealized_pnl': pos['quantity'] * (eod_prices.get(symbol, pos['avg_entry_price']) - pos['avg_entry_price']),
+                'current_price': new_prices.get(symbol, pos['avg_entry_price']),
+                'market_value': pos['quantity'] * new_prices.get(symbol, pos['avg_entry_price']),
+                'unrealized_pnl': pos['quantity'] * (new_prices.get(symbol, pos['avg_entry_price']) - pos['avg_entry_price']),
                 'days_held': (datetime.now() - pos['entry_time']).days,
                 'ai_entry_details': pos.get('ai_details', {})
             }
@@ -692,7 +608,7 @@ def run_enhanced_portfolio_test():
     print(f"📄 Saved detailed report to: {json_file}")
     
     # Display results
-    display_results(tracker, portfolio_summary, eod_prices)
+    display_results(tracker, portfolio_summary, new_prices)
 
 
 def display_results(tracker: TradeTracker, summary: Dict, current_prices: Dict):

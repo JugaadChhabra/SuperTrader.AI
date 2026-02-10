@@ -35,7 +35,7 @@ class RLConfig:
     
     # Model paths
     dqn_model_dir: str = str(MODEL_DIR / "intraday_dqn")
-    feature_scaler_path: str = str(MODEL_DIR / "feature_scaler.pkl")
+    feature_scaler_path: str = str(PROJECT_ROOT / "feature_scaler.pkl")
     
     # Training parameters
     epsilon: float = 0.05          # Exploration rate for inference
@@ -221,37 +221,30 @@ class SuperTraderConfig:
         }
     
     def _get_latest_checkpoint(self) -> Optional[str]:
-        """Find latest Keras checkpoint (.weights.h5) with highest episode number.
-
-        Filenames match pattern: 'checkpoint_episode_<N>.weights.h5'.
-        Uses regex on the filename (not stem) to handle double extension.
-        Returns absolute path string or None if none found.
-        """
-        import re
+        """Find latest model checkpoint"""
         model_dir = Path(self.rl.dqn_model_dir)
         if not model_dir.exists():
             return None
-
-        pattern = re.compile(r"checkpoint_episode_(\d+)\.weights\.h5$")
-        checkpoints = list(model_dir.glob("*.weights.h5"))
+        
+        # Find highest episode number checkpoint
+        checkpoints = list(model_dir.glob("checkpoint_episode_*.weights.h5"))
         if not checkpoints:
             return None
-
-        episodes: list[tuple[int, str]] = []
+        
+        # Extract episode numbers and find max
+        episodes = []
         for cp in checkpoints:
-            match = pattern.search(cp.name)
-            if not match:
-                continue
             try:
-                ep = int(match.group(1))
-                episodes.append((ep, str(cp)))
+                episode_num = int(cp.stem.split("_")[-1])
+                episodes.append((episode_num, str(cp)))
             except ValueError:
                 continue
-
-        if not episodes:
-            return None
-        episodes.sort(key=lambda x: x[0], reverse=True)
-        return episodes[0][1]
+        
+        if episodes:
+            episodes.sort(key=lambda x: x[0], reverse=True)
+            return episodes[0][1]
+        
+        return None
     
     def get_trading_limits(self) -> Dict[str, float]:
         """Get trading risk limits"""
